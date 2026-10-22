@@ -378,6 +378,25 @@ async fn attachment_save(b: State<'_, Bridge>, id: String, index: u32, open: boo
     Ok(path.display().to_string())
 }
 
+/// "Sign in with Microsoft" (Outlook.com, Hotmail): opens Microsoft's page in
+/// the browser and waits until the person has signed in, on a connection of
+/// its own so the rest of the app keeps working meanwhile.
+#[tauri::command]
+async fn account_microsoft(address: String) -> Res<Account> {
+    let mut own = hysjd::socket::client(Some("app"))
+        .await
+        .map_err(|e| e.to_string())?;
+    let p = hysj_proto::AccountOAuth { address };
+    let started: hysj_proto::OAuthStarted = own
+        .call(method::ACCOUNT_OAUTH_START, &p)
+        .await
+        .map_err(|e| e.to_string())?;
+    open_link(started.url)?;
+    own.call(method::ACCOUNT_OAUTH_FINISH, &p)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Opens a link in the system browser. Only web links: the UI asks, Rust checks.
 #[tauri::command]
 fn open_link(url: String) -> Res<()> {
@@ -444,6 +463,7 @@ fn main() {
             update_auto,
             update_restart,
             account_label,
+            account_microsoft,
             signal_hold,
             booking_list,
             order_list,

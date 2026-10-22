@@ -136,14 +136,35 @@ fn split_id(s: &str) -> Option<(u32, u32)> {
     Some((v.parse().ok()?, u.parse().ok()?))
 }
 
+/// How to log in: a password, or an OAuth access token (Microsoft accounts,
+/// which take no passwords; sent as SASL XOAUTH2).
+#[derive(Clone, Copy)]
+pub enum Login<'a> {
+    Password(&'a str),
+    Bearer(&'a str),
+}
+
+/// SASL XOAUTH2 (the client base64-encodes it).
+struct XOAuth2<'a> {
+    user: &'a str,
+    token: &'a str,
+}
+
+impl async_imap::Authenticator for XOAuth2<'_> {
+    type Response = String;
+    fn process(&mut self, _challenge: &[u8]) -> String {
+        format!("user={}\x01auth=Bearer {}\x01\x01", self.user, self.token)
+    }
+}
+
 impl ImapBackend {
     /// Connects over implicit TLS, logs in and picks the mailbox to sync.
-    pub async fn connect(account: &Account, password: &str) -> Result<Self, BackendError> {
+    pub async fn connect(account: &Account, login: Login<'_>) -> Result<Self, BackendError> {
         let mut backend = within(Self::connect_inner(
             &account.host,
             account.port,
             &account.username,
-            password,
+            login,
         ))
         .await?;
         // SMTP connects lazily, on the first send.
@@ -151,7 +172,7 @@ impl ImapBackend {
             &account.smtp_host,
             account.smtp_port,
             &account.username,
-            password,
+            login,
         )?;
         Ok(backend)
     }
@@ -160,7 +181,7 @@ impl ImapBackend {
         host: &str,
         port: u16,
         username: &str,
-        password: &str,
+        login: Login<'_>,
     ) -> Result<Self, BackendError> {
         let tcp = TcpStream::connect((host, port)).await?;
         // rustls + the OS trust store. (async-native-tls stalled every round trip on macOS.)
@@ -177,7 +198,21 @@ impl ImapBackend {
             .read_response()
             .await?
             .ok_or("server closed before greeting")?;
-        let mut session = client.login(username, password).await.map_err(|(e, _)| e)?;
+        let mut session = match login {
+            Login::Password(password) => client.login(username, password).await,
+            Login::Bearer(token) => {
+                client
+                    .authenticate(
+                        "XOAUTH2",
+                        XOAuth2 {
+                            user: username,
+                            token,
+                        },
+                    )
+                    .await
+            }
+        }
+        .map_err(|(e, _)| e)?;
 
         let caps = session.capabilities().await?;
         let gmail = caps.has_str("X-GM-EXT-1");
@@ -195,7 +230,7 @@ impl ImapBackend {
             gmail,
             condstore,
             // Replaced in `connect`; needs no network until used.
-            smtp: smtp::transport(host, 465, username, password)?,
+            smtp: smtp::transport(host, 465, username, login)?,
         })
     }
 
@@ -549,6 +584,23 @@ async fn within<T>(f: impl Future<Output = Result<T, BackendError>>) -> Result<T
     tokio::time::timeout(TIMEOUT, f)
         .await
         .map_err(|_| format!("mail server did not answer within {}s", TIMEOUT.as_secs()))?
+}
+
+#[cfg(test)]
+mod xoauth2_tests {
+    use async_imap::Authenticator;
+
+    #[test]
+    fn the_line_microsoft_expects() {
+        let mut a = super::XOAuth2 {
+            user: "kari@hotmail.com",
+            token: "T0KEN",
+        };
+        assert_eq!(
+            a.process(b""),
+            "user=kari@hotmail.com\x01auth=Bearer T0KEN\x01\x01"
+        );
+    }
 }
 
 #[cfg(test)]

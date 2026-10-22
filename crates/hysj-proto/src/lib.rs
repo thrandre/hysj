@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Bumped on any incompatible change to the types below.
-pub const PROTOCOL_VERSION: u32 = 21;
+pub const PROTOCOL_VERSION: u32 = 22;
 
 // --- JSON-RPC 2.0 envelopes -------------------------------------------------
 
@@ -109,6 +109,10 @@ pub mod method {
     pub const SYNC: &str = "sync";
     pub const ACCOUNT_ADD: &str = "account/add";
     pub const ACCOUNT_LIST: &str = "account/list";
+    /// "Sign in with Microsoft": the page to open in the browser.
+    pub const ACCOUNT_OAUTH_START: &str = "account/oauth_start";
+    /// Waits for that sign-in to finish, then adds the account.
+    pub const ACCOUNT_OAUTH_FINISH: &str = "account/oauth_finish";
     /// Rename an account as shown (its key stays).
     pub const ACCOUNT_LABEL: &str = "account/label";
     pub const IDENTITY_LIST: &str = "identity/list";
@@ -341,6 +345,19 @@ pub struct Account {
     /// What the reader calls it ("Work"); the UI shows `name` without one.
     #[serde(default)]
     pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct AccountOAuth {
+    pub address: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct OAuthStarted {
+    /// Microsoft's sign-in page (opened in the browser).
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

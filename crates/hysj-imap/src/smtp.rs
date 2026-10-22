@@ -4,7 +4,7 @@ use std::hash::{BuildHasher, Hasher};
 
 use hysj_core::{BackendError, Outgoing};
 use lettre::message::{Mailbox, header::ContentType};
-use lettre::transport::smtp::authentication::Credentials;
+use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 
 pub(crate) type Smtp = AsyncSmtpTransport<Tokio1Executor>;
@@ -14,17 +14,23 @@ pub(crate) fn transport(
     host: &str,
     port: u16,
     username: &str,
-    password: &str,
+    login: crate::Login<'_>,
 ) -> Result<Smtp, BackendError> {
     let builder = if port == 465 {
         AsyncSmtpTransport::<Tokio1Executor>::relay(host)?
     } else {
         AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(host)?
     };
-    Ok(builder
-        .port(port)
-        .credentials(Credentials::new(username.into(), password.into()))
-        .build())
+    let builder = builder.port(port);
+    Ok(match login {
+        crate::Login::Password(p) => {
+            builder.credentials(Credentials::new(username.into(), p.into()))
+        }
+        crate::Login::Bearer(t) => builder
+            .credentials(Credentials::new(username.into(), t.into()))
+            .authentication(vec![Mechanism::Xoauth2]),
+    }
+    .build())
 }
 
 pub(crate) async fn send(smtp: &Smtp, msg: &Message) -> Result<(), BackendError> {

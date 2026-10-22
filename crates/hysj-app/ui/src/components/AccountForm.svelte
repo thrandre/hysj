@@ -47,11 +47,26 @@
     return d.includes('.') && !d.endsWith('.') ? d : '';
   });
   let gmail = $derived(domain === 'gmail.com' || domain === 'googlemail.com');
+  // Outlook.com and Hotmail take no passwords from mail apps: Microsoft sign-in
+  // (the daemon's oauth.rs decides the same way).
+  let microsoft = $derived(['hotmail', 'outlook', 'live', 'msn', 'windowslive'].includes(domain.split('.')[0]));
   let servers = $derived(manual || !gmail);
 
   function reset() {
     manual = false;
     [email, password, imapHost, imapPort, smtpHost, smtpPort, username] = ['', '', '', 993, '', 465, ''];
+  }
+
+  async function signInMicrosoft() {
+    adding = true;
+    const address = email.trim();
+    const ok = await act('Waiting for you to sign in to Microsoft in your browser…', () => api.accountMicrosoft(address));
+    adding = false;
+    if (ok) {
+      reset();
+      void act('Syncing…', () => api.sync());
+      ondone();
+    }
   }
 
   async function connect() {
@@ -84,7 +99,16 @@
   <label for="addr">Email address</label>
   <input id="addr" type="email" placeholder="name@example.com" bind:value={email} autocomplete="email" disabled={edit !== null} />
   {#if !edit}<span class="fine">Type the servers below, or leave them empty and Hysj guesses from the address.</span>{/if}
-  {#if domain}
+  {#if domain && microsoft}
+    <p>
+      Outlook.com and Hotmail don’t take passwords from mail apps any more. Sign in with Microsoft in your browser instead — Hysj never sees your password,
+      and you can remove its access any time in your Microsoft account.
+    </p>
+    <div class="row">
+      <button class="btn primary" disabled={adding} onclick={signInMicrosoft}>{adding ? 'Waiting for Microsoft…' : edit ? 'Sign in again' : 'Sign in with Microsoft'}</button>
+      {#if edit}<button class="btn ghost" onclick={() => (reset(), oncancel())}>Cancel</button>{/if}
+    </div>
+  {:else if domain}
     {#if gmail}
       <p>Gmail connects with an <strong>app password</strong> — a separate password just for Hysj that you can revoke any time.</p>
       <ol>

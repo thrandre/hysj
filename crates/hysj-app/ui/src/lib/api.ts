@@ -61,6 +61,8 @@ export const api = {
   sync: () => call<SyncResult[]>('sync'),
   accountAdd: (params: AccountAddParams) => call<Account>('account_add', { params }),
   accountLabel: (name: string, label: string | null) => call<null>('account_label', { name, label }),
+  /** Opens Microsoft's sign-in in the browser and resolves once it's done. */
+  accountMicrosoft: (address: string) => call<Account>('account_microsoft', { address }),
   openLink: (url: string) => call<null>('open_link', { url }),
   search: (query: string) => call<Found[]>('search', { query }),
   digestEdition: (pick: number) => call<Edition>('digest_edition', { pick }),

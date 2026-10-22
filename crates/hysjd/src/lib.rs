@@ -5,6 +5,7 @@
 //! socket ([`socket`]). Tests run it in-process via [`serve`].
 
 pub mod ai;
+pub mod oauth;
 pub mod schedule;
 pub mod socket;
 
@@ -78,7 +79,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use hysj_core::{MailBackend, Outgoing, Store, Transport, sync};
-use hysj_imap::ImapBackend;
+use hysj_imap::{ImapBackend, Login};
 use hysj_proto::MessageView;
 use hysj_proto::{
     Account, AccountAddParams, AttachmentData, AttachmentParams, CodeReport, CodeSettings, Folder,
@@ -147,8 +148,11 @@ pub struct Daemon {
     /// Open IMAP sessions by account name, connected on first use.
     sessions: HashMap<String, ImapBackend>,
     /// Passwords read from the keychain ahead of time, by address, so a
-    /// keychain dialog never holds the daemon's lock (see `schedule`).
+    /// keychain dialog never holds the daemon's lock (see `schedule`). For a
+    /// Microsoft account it's the refresh token (`oauth:ms:…`).
     passwords: HashMap<String, String>,
+    /// Microsoft access tokens by address (memory only; renewed when stale).
+    tokens: HashMap<String, oauth::Tokens>,
 }
 
 impl Daemon {
@@ -158,6 +162,7 @@ impl Daemon {
             store,
             sessions: HashMap::new(),
             passwords: HashMap::new(),
+            tokens: HashMap::new(),
         }
     }
 
@@ -190,7 +195,43 @@ impl Daemon {
             .ok_or_else(|| RpcError::new(RpcError::NOT_FOUND, format!("no account named {name}")))
     }
 
+    /// A fresh access token for a Microsoft account, renewed if it's stale.
+    /// Microsoft sends a new refresh token each time; it's kept in memory at
+    /// once and written to the keychain off the lock.
+    async fn access_token(&mut self, address: &str, refresh: &str) -> Result<String, RpcError> {
+        if let Some(t) = self.tokens.get(address).filter(|t| t.fresh()) {
+            return Ok(t.access.clone());
+        }
+        let t = oauth::refresh(refresh)
+            .await
+            .map_err(|e| backend_err(format!("Microsoft sign-in: {e}")))?;
+        if let Some(new) = t.refresh.clone().filter(|n| n != refresh) {
+            let secret = format!("{}{new}", oauth::MS_PREFIX);
+            self.passwords.insert(address.to_string(), secret.clone());
+            let a = address.to_string();
+            tokio::task::spawn_blocking(move || {
+                if let Err(e) =
+                    keyring::Entry::new(KEYRING_SERVICE, &a).and_then(|e| e.set_password(&secret))
+                {
+                    tracing::warn!(error = %e, "couldn't keep the renewed Microsoft sign-in");
+                }
+            });
+        }
+        let access = t.access.clone();
+        self.tokens.insert(address.to_string(), t);
+        Ok(access)
+    }
+
     async fn session(&mut self, account: &Account) -> Result<&mut ImapBackend, RpcError> {
+        // A Microsoft session logged in with a token that's about to expire
+        // reconnects (its SMTP login carries the token too).
+        let microsoft = self
+            .passwords
+            .get(&account.address)
+            .is_some_and(|p| p.starts_with(oauth::MS_PREFIX));
+        if microsoft && !self.tokens.get(&account.address).is_some_and(|t| t.fresh()) {
+            self.sessions.remove(&account.name);
+        }
         if !self.sessions.contains_key(&account.name) {
             // Read by the scheduler, never here: a keychain dialog must not hold
             // the lock (see `schedule`).
@@ -204,9 +245,14 @@ impl Daemon {
                             .to_string(),
                     )
                 })?;
-            let backend = ImapBackend::connect(account, &password)
-                .await
-                .map_err(backend_err)?;
+            let backend = match password.strip_prefix(oauth::MS_PREFIX) {
+                Some(refresh) => {
+                    let token = self.access_token(&account.address, refresh).await?;
+                    ImapBackend::connect(account, Login::Bearer(&token)).await
+                }
+                None => ImapBackend::connect(account, Login::Password(&password)).await,
+            }
+            .map_err(backend_err)?;
             self.sessions.insert(account.name.clone(), backend);
         }
         Ok(self
@@ -245,7 +291,7 @@ impl Daemon {
             address: p.address,
         };
         // Only keep credentials that actually log in.
-        let backend = ImapBackend::connect(&account, &p.password)
+        let backend = ImapBackend::connect(&account, Login::Password(&p.password))
             .await
             .map_err(backend_err)?;
         keyring::Entry::new(KEYRING_SERVICE, &account.address)
@@ -256,6 +302,50 @@ impl Daemon {
             .insert(account.address.clone(), p.password.clone());
         self.sessions.insert(account.name.clone(), backend);
         tracing::info!(account = %account.name, "account added");
+        Ok(account)
+    }
+
+    /// Adds (or signs in again) a Microsoft account after "Sign in with
+    /// Microsoft": logs in with the token first, keeps nothing that doesn't work.
+    async fn add_microsoft(
+        &mut self,
+        address: &str,
+        t: oauth::Tokens,
+    ) -> Result<Account, RpcError> {
+        let refresh = t
+            .refresh
+            .clone()
+            .ok_or_else(|| backend_err("Microsoft sent no refresh token".to_string()))?;
+        let existing = self
+            .store
+            .accounts()
+            .map_err(backend_err)?
+            .into_iter()
+            .find(|a| a.address.eq_ignore_ascii_case(address));
+        let account = Account {
+            name: existing
+                .as_ref()
+                .map_or_else(|| address.to_string(), |a| a.name.clone()),
+            address: address.to_string(),
+            host: oauth::IMAP_HOST.into(),
+            port: 993,
+            username: address.to_string(),
+            smtp_host: oauth::SMTP_HOST.into(),
+            smtp_port: 587,
+            label: None,
+        };
+        let backend = ImapBackend::connect(&account, Login::Bearer(&t.access))
+            .await
+            .map_err(backend_err)?;
+        let secret = format!("{}{refresh}", oauth::MS_PREFIX);
+        keyring::Entry::new(KEYRING_SERVICE, &account.address)
+            .and_then(|e| e.set_password(&secret))
+            .map_err(|e| backend_err(format!("keychain: {e}")))?;
+        self.store.add_account(&account).map_err(backend_err)?;
+        self.passwords.insert(account.address.clone(), secret);
+        self.tokens.insert(account.address.clone(), t);
+        self.sessions.insert(account.name.clone(), backend);
+        tracing::info!(account = %account.name, "Microsoft account added");
         Ok(account)
     }
 
@@ -669,6 +759,9 @@ pub struct Hub {
     /// Scheduled syncs stop after a keychain error (no prompt every minute)
     /// until the user syncs by hand.
     pub sync_paused: std::sync::atomic::AtomicBool,
+    /// Microsoft sign-ins waiting for the browser, by address. Apart from the
+    /// daemon's lock: waiting for a person must not stop the mail.
+    oauth: tokio::sync::Mutex<HashMap<String, oauth::Pending>>,
 }
 
 impl Hub {
@@ -679,6 +772,7 @@ impl Hub {
             state: AtomicU64::new(1),
             apps: AtomicUsize::new(0),
             sync_paused: std::sync::atomic::AtomicBool::new(false),
+            oauth: tokio::sync::Mutex::new(HashMap::new()),
         })
     }
 
@@ -762,7 +856,13 @@ async fn handle(raw: &str, hub: &Hub, conn: &mut Conn) -> Response {
         hub.sync_paused.store(false, Ordering::Relaxed);
     }
     let was_app = conn.app;
-    let result = dispatch(req, &mut *hub.daemon.lock().await, conn).await;
+    let result = match req.method.as_str() {
+        // Waits for a person in a browser: never under the daemon's lock.
+        method::ACCOUNT_OAUTH_START | method::ACCOUNT_OAUTH_FINISH if conn.greeted => {
+            oauth_step(req, hub).await
+        }
+        _ => dispatch(req, &mut *hub.daemon.lock().await, conn).await,
+    };
     if conn.app && !was_app {
         hub.apps.fetch_add(1, Ordering::Relaxed);
     }
@@ -775,6 +875,41 @@ async fn handle(raw: &str, hub: &Hub, conn: &mut Conn) -> Response {
         }
         Err(e) => Response::err(Some(id), e),
     }
+}
+
+/// "Sign in with Microsoft": start hands out the page to open; finish waits
+/// for the browser to come back, then adds the account under the lock.
+async fn oauth_step(req: Request, hub: &Hub) -> Result<Value, RpcError> {
+    let p: hysj_proto::AccountOAuth = params(req.params)?;
+    let address = p.address.trim().to_lowercase();
+    if !oauth::is_microsoft(&address) {
+        return Err(RpcError::new(
+            RpcError::INVALID_PARAMS,
+            "not a Microsoft address",
+        ));
+    }
+    let fail = |e: oauth::OAuthError| backend_err(format!("Microsoft sign-in: {e}"));
+    if req.method == method::ACCOUNT_OAUTH_START {
+        let pending = oauth::start(&address).await.map_err(fail)?;
+        let url = pending.url.clone();
+        hub.oauth.lock().await.insert(address, pending);
+        return to_value(hysj_proto::OAuthStarted { url });
+    }
+    let pending = hub
+        .oauth
+        .lock()
+        .await
+        .remove(&address)
+        .ok_or_else(|| RpcError::new(RpcError::INVALID_PARAMS, "start the sign-in first"))?;
+    let tokens = oauth::finish(pending).await.map_err(fail)?;
+    let account = hub
+        .daemon
+        .lock()
+        .await
+        .add_microsoft(&address, tokens)
+        .await?;
+    hub.changed();
+    to_value(account)
 }
 
 async fn dispatch(req: Request, daemon: &mut Daemon, conn: &mut Conn) -> Result<Value, RpcError> {

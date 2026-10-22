@@ -1,6 +1,7 @@
 export type { Account } from './Account';
 export type { AccountAddParams } from './AccountAddParams';
 export type { AccountLabel } from './AccountLabel';
+export type { AccountOAuth } from './AccountOAuth';
 export type { AiSettings } from './AiSettings';
 export type { AttachmentData } from './AttachmentData';
 export type { AttachmentInfo } from './AttachmentInfo';
@@ -31,6 +32,7 @@ export type { Message } from './Message';
 export type { MessageDone } from './MessageDone';
 export type { MessageSummary } from './MessageSummary';
 export type { MessageView } from './MessageView';
+export type { OAuthStarted } from './OAuthStarted';
 export type { OrderItem } from './OrderItem';
 export type { Reason } from './Reason';
 export type { ScreenerDecide } from './ScreenerDecide';

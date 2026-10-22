@@ -20,6 +20,11 @@ dirs.workspace = true
 hysj-ai.workspace = true
 mail-parser.workspace = true
 base64.workspace = true
+thiserror.workspace = true
+# Microsoft sign-in (oauth.rs); versions already in the build via mistral.rs.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+sha2 = "0.10"
+getrandom = "0.2"
 
 [dev-dependencies]
 tokio.workspace = true
