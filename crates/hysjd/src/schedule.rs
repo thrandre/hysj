@@ -82,22 +82,22 @@ pub async fn run(hub: Arc<Hub>) {
                 }
             }
         }
-        let (codes, delivered, new_mail) = {
-            let mut d = hub.daemon.lock().await;
-            // HYSJ_NO_SYNC: offline runs (screenshots, tests on a store copy).
-            let offline = std::env::var_os("HYSJ_NO_SYNC").is_some();
-            let mut new_mail = false;
-            if !offline && !hub.sync_paused.load(std::sync::atomic::Ordering::Relaxed) {
-                match d.sync(None).await {
-                    Ok(r) => new_mail = r.iter().any(|r| r.new > 0),
-                    Err(e) if e.message.starts_with("keychain") => {
-                        hub.sync_paused
-                            .store(true, std::sync::atomic::Ordering::Relaxed);
-                        tracing::warn!(error = %e, "keychain unavailable; scheduled sync paused until a manual Sync");
-                    }
-                    Err(e) => tracing::warn!(error = %e, "scheduled sync failed"),
+        // HYSJ_NO_SYNC: offline runs (screenshots, tests on a store copy).
+        let offline = std::env::var_os("HYSJ_NO_SYNC").is_some();
+        let mut new_mail = false;
+        if !offline && !hub.sync_paused.load(std::sync::atomic::Ordering::Relaxed) {
+            match hub.sync(None).await {
+                Ok(r) => new_mail = r.iter().any(|r| r.new > 0),
+                Err(e) if e.message.starts_with("keychain") => {
+                    hub.sync_paused
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                    tracing::warn!(error = %e, "keychain unavailable; scheduled sync paused until a manual Sync");
                 }
+                Err(e) => tracing::warn!(error = %e, "scheduled sync failed"),
             }
+        }
+        let (codes, delivered) = {
+            let d = hub.daemon.lock().await;
             let now = jiff::Timestamp::now().as_second();
             let codes = d.store.codes(now).unwrap_or_default();
             let slot = digest::last_slot(&jiff::Zoned::now());
@@ -117,7 +117,7 @@ pub async fn run(hub: Arc<Hub>) {
             } else {
                 None
             };
-            (codes, delivered, new_mail)
+            (codes, delivered)
         };
 
         let now = jiff::Timestamp::now().as_second();

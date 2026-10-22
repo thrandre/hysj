@@ -776,6 +776,76 @@ impl Hub {
         })
     }
 
+    /// Syncs mail (all accounts, or one), holding the daemon's lock only to
+    /// read and write the store: the waits on the mail server happen without
+    /// it, so the app's requests aren't stuck behind a sync. The session is
+    /// taken out of the pool meanwhile (a request needing it opens another).
+    pub async fn sync(&self, only: Option<String>) -> Result<Vec<SyncResult>, RpcError> {
+        use hysj_core::MailBackend;
+        let accounts = {
+            let d = self.daemon.lock().await;
+            match only {
+                Some(name) => vec![d.account(&name)?],
+                None => d.store.accounts().map_err(backend_err)?,
+            }
+        };
+        let mut results = Vec::new();
+        for account in accounts {
+            let name = account.name.clone();
+            let (mut backend, cursor) = {
+                let mut d = self.daemon.lock().await;
+                d.session(&account).await?;
+                let backend = d.sessions.remove(&name).expect("connected above");
+                (backend, d.store.cursor(&name).map_err(backend_err)?)
+            };
+            let changes = backend.sync_since(cursor.as_deref()).await.map_err(|e| {
+                tracing::warn!(account = %name, error = %e, "backend call failed");
+                backend_err(e)
+            })?;
+            let (new, pending) = {
+                let mut d = self.daemon.lock().await;
+                let new = d.store.apply(&name, &changes).map_err(backend_err)?;
+                let pending = d
+                    .store
+                    .pending_extracts(&name, hysj_core::sync::EXTRACT_PER_SYNC)
+                    .unwrap_or_default();
+                (new, pending)
+            };
+            tracing::info!(account = %name, new, "synced");
+            // Codes, bookings, orders. Never fails the sync; counts only in logs.
+            let ids: Vec<String> = pending.iter().map(|p| p.remote_id.clone()).collect();
+            let bodies = if ids.is_empty() {
+                Ok(Vec::new())
+            } else {
+                backend
+                    .fetch_many(&ids, hysj_core::sync::EXTRACT_MAX_BYTES)
+                    .await
+            };
+            let mut d = self.daemon.lock().await;
+            match bodies {
+                Ok(bodies) => {
+                    let bodies: HashMap<String, Vec<u8>> = bodies.into_iter().collect();
+                    for p in &pending {
+                        // A message gone from the server is recorded as examined, not retried.
+                        let found = bodies
+                            .get(&p.remote_id)
+                            .map(|raw| hysj_core::extract::extract(raw))
+                            .unwrap_or_default();
+                        if let Err(e) = d.store.record_extracts(p, &found) {
+                            tracing::warn!(account = %name, error = %e, "extraction not stored");
+                        }
+                    }
+                    tracing::info!(account = %name, examined = pending.len(), "extracted");
+                    d.sessions.insert(name.clone(), backend);
+                }
+                // The session is suspect: dropped, reconnected next time.
+                Err(e) => tracing::warn!(account = %name, error = %e, "extraction failed"),
+            }
+            results.push(SyncResult { account: name, new });
+        }
+        Ok(results)
+    }
+
     /// Tells every connected client that mail state changed (JMAP-style: they refetch).
     pub fn changed(&self) {
         let state = self.state.fetch_add(1, Ordering::Relaxed) + 1;
@@ -861,6 +931,11 @@ async fn handle(raw: &str, hub: &Hub, conn: &mut Conn) -> Response {
         method::ACCOUNT_OAUTH_START | method::ACCOUNT_OAUTH_FINISH if conn.greeted => {
             oauth_step(req, hub).await
         }
+        // Waits on mail servers: the lock only around the store (Hub::sync).
+        method::SYNC if conn.greeted => match params::<SyncParams>(req.params) {
+            Ok(p) => hub.sync(p.account).await.and_then(to_value),
+            Err(e) => Err(e),
+        },
         _ => dispatch(req, &mut *hub.daemon.lock().await, conn).await,
     };
     if conn.app && !was_app {
@@ -977,10 +1052,6 @@ async fn dispatch(req: Request, daemon: &mut Daemon, conn: &mut Conn) -> Result<
                 .set_images_allowed(&p.sender, p.allow)
                 .map_err(backend_err)?;
             to_value(())
-        }
-        method::SYNC => {
-            let p: SyncParams = params(req.params)?;
-            to_value(daemon.sync(p.account).await?)
         }
         method::ACCOUNT_ADD => to_value(daemon.add_account(params(req.params)?).await?),
         method::ACCOUNT_LIST => to_value(daemon.store.accounts().map_err(backend_err)?),
