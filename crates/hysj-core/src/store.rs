@@ -339,6 +339,23 @@ impl Store {
         self.set_digest_setting("ai_off", !on)
     }
 
+    /// The model size the reader chose ("standard" or "light"), if they did.
+    pub fn ai_size(&self) -> Result<Option<String>, StoreError> {
+        self.db
+            .query_row("SELECT value FROM meta WHERE key = 'ai_size'", [], |r| {
+                r.get(0)
+            })
+            .optional()
+    }
+
+    pub fn set_ai_size(&self, size: &str) -> Result<(), StoreError> {
+        self.db.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('ai_size', ?1)",
+            [size],
+        )?;
+        Ok(())
+    }
+
     /// Whether the AI may run on battery (off unless the reader allows it).
     pub fn ai_on_battery(&self) -> Result<bool, StoreError> {
         self.db.query_row(

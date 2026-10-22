@@ -16,4 +16,12 @@ on_battery: boolean,
 /**
  * The Mac is on battery right now (so the AI is waiting); ignored when setting.
  */
-waiting_for_power: boolean, };
+waiting_for_power: boolean, 
+/**
+ * "standard" (best summaries) or "light" (for 8 GB Macs).
+ */
+size: string, 
+/**
+ * What this Mac should use (by its memory); ignored when setting.
+ */
+recommended: string, };

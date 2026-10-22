@@ -16,7 +16,42 @@ use hysj_core::store::AiTask;
 use crate::Hub;
 
 /// The model Hysj uses (chosen by benchmark: Gemma 3 4B).
-pub const MODEL: Choice = Choice::Gemma3_4b;
+pub const STANDARD: Choice = Choice::Gemma3_4b;
+/// For Macs with 8 GB: a quarter of the memory, about six times faster,
+/// plainer summaries (measured on real mail).
+pub const LIGHT: Choice = Choice::Qwen3_1_7b;
+
+/// This Mac's memory in GB (0 if it can't tell).
+pub fn memory_gb() -> u64 {
+    std::process::Command::new("sysctl")
+        .args(["-n", "hw.memsize"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .trim()
+                .parse::<u64>()
+                .ok()
+        })
+        .map_or(0, |b| b / (1 << 30))
+}
+
+/// "light" on Macs with 8 GB or less, else "standard".
+pub fn recommended_size() -> &'static str {
+    match memory_gb() {
+        1..=8 => "light",
+        _ => "standard",
+    }
+}
+
+/// The model the reader chose, else the one recommended for this Mac.
+pub fn chosen(store: &hysj_core::Store) -> Choice {
+    let size = store.ai_size().ok().flatten();
+    match size.as_deref().unwrap_or_else(|| recommended_size()) {
+        "light" => LIGHT,
+        _ => STANDARD,
+    }
+}
 /// Messages per pass, so the lock is released often.
 pub const BATCH: usize = 4;
 const EVERY: Duration = Duration::from_secs(30);
@@ -64,7 +99,9 @@ pub async fn pass<W: Writer>(hub: &Hub, w: &W, model: &str) -> usize {
         let result = match j.task {
             AiTask::Issue => match w.issue(&text).await {
                 Ok(i) => {
-                    offer = i.offer;
+                    // The light model flags too many real newsletters as
+                    // offers (which then vanish into promotions): Standard only.
+                    offer = i.offer && model == STANDARD.version();
                     if accept_issue(&i.gist, &j.subject) {
                         Ok(i.gist)
                     } else {
@@ -283,7 +320,6 @@ pub async fn run(hub: Arc<Hub>) {
     if std::env::var_os("HYSJ_NO_SYNC").is_some() || std::env::var_os("HYSJ_NO_AI").is_some() {
         return;
     }
-    let model = MODEL.version();
     let mut llm: Option<Llm> = None;
     let mut last_work = std::time::Instant::now();
     loop {
@@ -294,13 +330,19 @@ pub async fn run(hub: Arc<Hub>) {
         // Turned off in Settings: rules only, and the memory back. On
         // battery it waits for the charger unless the reader said otherwise
         // (a fanless Air gets hot and drains fast while it writes).
-        let (enabled, on_battery) = {
+        let (enabled, on_battery, choice) = {
             let d = hub.daemon.lock().await;
             (
                 d.store.ai_enabled().unwrap_or(true),
                 d.store.ai_on_battery().unwrap_or(false),
+                chosen(&d.store),
             )
         };
+        let model = choice.version();
+        // Switched in Settings: the other model loads on the next pass.
+        if llm.as_ref().is_some_and(|l| l.choice != choice) {
+            llm = None;
+        }
         if !enabled || (!on_battery && on_battery_power().await) {
             llm = None;
             tokio::time::sleep(EVERY).await;
@@ -313,7 +355,7 @@ pub async fn run(hub: Arc<Hub>) {
                     model,
                     "loading the local model (downloads once on first use)"
                 );
-                match Llm::load(MODEL).await {
+                match Llm::load(choice).await {
                     Ok(l) => llm = Some(l),
                     Err(e) => tracing::warn!(error = %e, "model unavailable; trying again later"),
                 }

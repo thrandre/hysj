@@ -1064,11 +1064,22 @@ async fn dispatch(req: Request, daemon: &mut Daemon, conn: &mut Conn) -> Result<
                     .store
                     .set_ai_on_battery(p.on_battery)
                     .map_err(backend_err)?;
+                if matches!(p.size.as_str(), "standard" | "light") {
+                    daemon.store.set_ai_size(&p.size).map_err(backend_err)?;
+                }
             }
+            let choice = crate::ai::chosen(&daemon.store);
             let on_battery = daemon.store.ai_on_battery().map_err(backend_err)?;
             to_value(hysj_proto::AiSettings {
                 enabled: daemon.store.ai_enabled().map_err(backend_err)?,
-                model: crate::ai::MODEL.version().to_string(),
+                model: choice.version().to_string(),
+                size: if choice == crate::ai::LIGHT {
+                    "light"
+                } else {
+                    "standard"
+                }
+                .into(),
+                recommended: crate::ai::recommended_size().into(),
                 on_battery,
                 waiting_for_power: !on_battery && crate::ai::on_battery_power().await,
             })

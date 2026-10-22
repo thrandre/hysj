@@ -17,7 +17,7 @@
   let version = $state('');
 
   $effect(() => {
-    if (app.settingsTab === 'ai' && !ai) void api.aiSettings().then((s) => (ai = s));
+    if ((app.settingsTab === 'ai' || app.settingsTab === 'about') && !ai) void api.aiSettings().then((s) => (ai = s));
     if (app.settingsTab === 'about' && !version) void api.appVersion().then((v) => (version = v));
   });
 
@@ -42,6 +42,11 @@
     ];
     await copy(lines.join('\n'), 'diagnostics');
   }
+
+  const SIZES = [
+    { id: 'standard', name: 'Standard', desc: 'Best summaries in English and Norwegian (Gemma 3 4B).', size: '4 GB' },
+    { id: 'light', name: 'Light', desc: 'For Macs with 8 GB: about six times faster, plainer summaries (Qwen3 1.7B).', size: '1.1 GB' },
+  ];
 
   async function setAi(change: Partial<AiSettings>) {
     const s = await act(null, () => api.aiSettings({ ...ai!, ...change }));
@@ -103,11 +108,25 @@
   {:else if app.settingsTab === 'ai'}
     <h1 class="h1">Gists and replies are written on this Mac.</h1>
     <p class="lede">
-      A small language model (Gemma 3 4B) reads only what reaches you — people’s mail and the latest digest — and writes one-line gists, suggested replies and
-      the digest’s headline. Nothing leaves your computer. When it isn’t sure, you see the real subject line.
+      A small language model reads only what reaches you — people’s mail and the latest digest — and writes one-line gists, suggested replies and the digest’s
+      headline. Nothing leaves your computer. When it isn’t sure, you see the real subject line.
     </p>
+    {#if ai?.enabled}
+      <div class="sizes" role="radiogroup" aria-label="Model size">
+        {#each SIZES as s (s.id)}
+          <button role="radio" aria-checked={ai.size === s.id} onclick={() => setAi({ size: s.id })}>
+            <span class="radio" aria-hidden="true"></span>
+            <span class="what">
+              <strong>{s.name}{ai.recommended === s.id ? ' · recommended for this Mac' : ''}</strong>
+              <span class="fine">{s.desc}</span>
+            </span>
+            <span class="mono fine">{s.size}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
     <div class="card facts">
-      <p>Downloaded once (about 4 GB) into Hysj’s data folder.</p>
+      <p>Downloaded once into Hysj’s data folder; switching downloads the other one.</p>
       <p>Loaded when there is something to write, unloaded after 10 idle minutes.</p>
       <p>Codes, blocked senders and your own mail are never given to it.</p>
     </div>
@@ -155,7 +174,7 @@
       {#each [['Hysj app', ''], ['Background service', 'updates with the app'], ['Command line (hysj)', 'updates with the app']] as [label, note] (label)}
         <div class="version"><span>{label}</span><span class="fine">{note}</span><span class="mono">{version}</span></div>
       {/each}
-      <div class="version"><span>On-device AI</span><span class="fine">downloaded separately</span><span class="mono">Gemma 3 4B</span></div>
+      <div class="version"><span>On-device AI</span><span class="fine">downloaded separately</span><span class="mono">{ai ? (ai.size === 'light' ? 'Qwen3 1.7B' : 'Gemma 3 4B') : ''}</span></div>
     </div>
     <div class="row">
       <button class="btn" onclick={diagnostics}>{app.copied === 'diagnostics' ? 'Copied' : 'Copy diagnostics'}</button>
@@ -262,6 +281,45 @@
   }
   .facts {
     padding: 22px;
+  }
+  .sizes {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .sizes button {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 56px;
+    padding: 10px 14px;
+    border: 0;
+    border-radius: 14px;
+    background: transparent;
+    text-align: left;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .sizes button[aria-checked='true'] {
+    background: var(--surface);
+    box-shadow: inset 0 0 0 2px var(--ink);
+  }
+  .sizes .what {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .radio {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--ink);
+    box-sizing: border-box;
+  }
+  .sizes button[aria-checked='true'] .radio {
+    background: radial-gradient(var(--ink) 0 4px, transparent 5px);
   }
   .switch {
     display: flex;

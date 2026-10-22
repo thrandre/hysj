@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Bumped on any incompatible change to the types below.
-pub const PROTOCOL_VERSION: u32 = 22;
+pub const PROTOCOL_VERSION: u32 = 23;
 
 // --- JSON-RPC 2.0 envelopes -------------------------------------------------
 
@@ -723,6 +723,12 @@ pub struct AiSettings {
     /// The Mac is on battery right now (so the AI is waiting); ignored when setting.
     #[serde(default)]
     pub waiting_for_power: bool,
+    /// "standard" (best summaries) or "light" (for 8 GB Macs).
+    #[serde(default)]
+    pub size: String,
+    /// What this Mac should use (by its memory); ignored when setting.
+    #[serde(default)]
+    pub recommended: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

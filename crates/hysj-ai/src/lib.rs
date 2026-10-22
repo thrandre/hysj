@@ -22,6 +22,9 @@ pub enum Choice {
     Qwen3_4b,
     /// Gemma 3 4B, UQFF q4k (~4.4 GB with its base files).
     Gemma3_4b,
+    /// Qwen3 1.7B, GGUF Q4_K_M (~1.1 GB): the light model for 8 GB Macs.
+    /// (Gemma 3 1B was the other candidate; mistral.rs 0.8 can't load its GGUF.)
+    Qwen3_1_7b,
 }
 
 impl Choice {
@@ -29,6 +32,7 @@ impl Choice {
         match s {
             "qwen3" | "qwen3-4b" => Some(Self::Qwen3_4b),
             "gemma3" | "gemma3-4b" => Some(Self::Gemma3_4b),
+            "qwen3-1.7b" => Some(Self::Qwen3_1_7b),
             _ => None,
         }
     }
@@ -38,6 +42,7 @@ impl Choice {
         match self {
             Self::Qwen3_4b => "qwen3-4b-q4km",
             Self::Gemma3_4b => "gemma3-4b-q4k",
+            Self::Qwen3_1_7b => "qwen3-1.7b-q4km",
         }
     }
 }
@@ -55,6 +60,14 @@ impl Llm {
                 mistralrs::GgufModelBuilder::new("Qwen/Qwen3-4B-GGUF", vec!["Qwen3-4B-Q4_K_M.gguf"])
                     .build()
                     .await
+            }
+            Choice::Qwen3_1_7b => {
+                mistralrs::GgufModelBuilder::new(
+                    "unsloth/Qwen3-1.7B-GGUF",
+                    vec!["Qwen3-1.7B-Q4_K_M.gguf"],
+                )
+                .build()
+                .await
             }
             Choice::Gemma3_4b => {
                 mistralrs::UqffMultimodalModelBuilder::new(
