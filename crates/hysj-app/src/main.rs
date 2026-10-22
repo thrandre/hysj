@@ -149,6 +149,28 @@ fn update_restart(app: tauri::AppHandle) {
     }
 }
 
+/// The Mac Hysj runs on, for "Copy diagnostics": macOS version, chip, memory.
+#[tauri::command]
+fn system_info() -> String {
+    let out = |cmd: &str, args: &[&str]| {
+        std::process::Command::new(cmd)
+            .args(args)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default()
+    };
+    let gb = out("sysctl", &["-n", "hw.memsize"])
+        .parse::<u64>()
+        .map_or(String::new(), |b| format!("{} GB", b / (1 << 30)));
+    format!(
+        "macOS {} · {} · {} · {}",
+        out("sw_vers", &["-productVersion"]),
+        out("sysctl", &["-n", "hw.model"]),
+        out("sysctl", &["-n", "machdep.cpu.brand_string"]),
+        gb
+    )
+}
+
 /// This build's version (the app, background service and CLI ship together).
 #[tauri::command]
 fn app_version() -> &'static str {
@@ -416,6 +438,7 @@ fn main() {
             digest_hours,
             ai_settings,
             app_version,
+            system_info,
             update_status,
             update_check,
             update_auto,

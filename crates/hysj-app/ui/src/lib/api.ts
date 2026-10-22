@@ -68,6 +68,7 @@ export const api = {
   digestHours: (hours?: number[]) => call<number[]>('digest_hours', { hours: hours ?? null }),
   aiSettings: (set?: AiSettings) => call<AiSettings>('ai_settings', { set: set ?? null }),
   appVersion: () => call<string>('app_version'),
+  systemInfo: () => call<string>('system_info'),
   updateStatus: () => call<UpdateStatus>('update_status'),
   updateCheck: () => call<UpdateStatus>('update_check'),
   updateAuto: (on: boolean) => call<UpdateStatus>('update_auto', { on }),

@@ -1,7 +1,7 @@
 <script lang="ts">
   // Settings: accounts, when the digest comes, the on-device AI, appearance
   // and about.
-  import { act, app, accountSlot, setTheme } from '../lib/app.svelte.ts';
+  import { act, app, accountSlot, copy, setTheme } from '../lib/app.svelte.ts';
   import { api } from '../lib/api.ts';
   import type { Account, AiSettings } from '../lib/gen/index';
   import AccountForm from '../components/AccountForm.svelte';
@@ -24,6 +24,23 @@
   async function rename(a: Account) {
     const label = newLabel.trim();
     if ((await act(null, () => api.accountLabel(a.name, label || null))) !== undefined) renaming = null;
+  }
+
+  /** For bug reports: versions, the Mac and counts — no addresses, names or mail. */
+  async function diagnostics() {
+    const d = app.data!;
+    const ai = await api.aiSettings().catch(() => null);
+    const kinds = d.accounts.map((a) => (a.host === 'imap.gmail.com' ? 'Gmail' : 'IMAP')).join(', ');
+    const lines = [
+      `Hysj ${await api.appVersion()} (${app.update?.can_update ? 'release' : 'built locally'})`,
+      await api.systemInfo(),
+      `Accounts: ${d.accounts.length} (${kinds || 'none'})`,
+      `Mail: ${d.people.length} people · ${d.digest.length} digest · ${d.screener.length} screener · ${d.done.length} done`,
+      `Found: ${d.codes.length} codes · ${d.bookings.length} bookings · ${d.orders.length} orders`,
+      `Digest at: ${d.digestHours.map((h) => `${String(h).padStart(2, '0')}:00`).join(', ')}`,
+      ai ? `AI: ${ai.enabled ? ai.model : 'off'}${ai.enabled && !ai.on_battery ? ' · pauses on battery' : ''}` : 'AI: unknown',
+    ];
+    await copy(lines.join('\n'), 'diagnostics');
   }
 
   async function setAi(change: Partial<AiSettings>) {
@@ -139,6 +156,10 @@
         <div class="version"><span>{label}</span><span class="fine">{note}</span><span class="mono">{version}</span></div>
       {/each}
       <div class="version"><span>On-device AI</span><span class="fine">downloaded separately</span><span class="mono">Gemma 3 4B</span></div>
+    </div>
+    <div class="row">
+      <button class="btn" onclick={diagnostics}>{app.copied === 'diagnostics' ? 'Copied' : 'Copy diagnostics'}</button>
+      <span class="fine">For a bug report: versions, your Mac and counts — no addresses, names or mail.</span>
     </div>
     {#if u?.can_update}
       <section class="updates" aria-labelledby="h-upd">
