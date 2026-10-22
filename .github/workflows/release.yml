@@ -29,6 +29,17 @@ jobs:
       - uses: taiki-e/cache-cargo-install-action@v2
         with:
           tool: tauri-cli@2
+      - name: Release notes from the tag's message
+        id: notes
+        run: |
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          {
+            echo 'body<<NOTES'
+            git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME"
+            echo
+            echo 'New to Hysj? How to install: https://github.com/thrandre/hysj#install'
+            echo NOTES
+          } >> "$GITHUB_OUTPUT"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -41,12 +52,8 @@ jobs:
           tauriScript: cargo tauri
           tagName: ${{ github.ref_name }}
           releaseName: Hysj __VERSION__
-          releaseBody: |
-            For Macs with Apple Silicon (M1 or newer). Download the .dmg and drag Hysj to Applications.
-
-            This build isn't signed by Apple yet. The first time you open it, macOS blocks it: open
-            System Settings › Privacy & Security, scroll down and choose **Open Anyway** next to Hysj.
-            Later versions install themselves from inside the app.
+          # Also the "what's new" in the app's Update ready popover.
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true

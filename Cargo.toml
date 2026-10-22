@@ -6,7 +6,7 @@ default-members = ["crates/hysj-app"]
 
 [workspace.package]
 edition = "2024"
-version = "0.1.0"
+version = "0.2.0"
 publish = false
 
 [workspace.dependencies]

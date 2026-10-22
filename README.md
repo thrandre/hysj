@@ -71,7 +71,10 @@ cd crates/hysj-app/ui && npm test   # UI tests
 ## Releasing
 
 1. Bump `version` in the root `Cargo.toml` and commit.
-2. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
+2. Tag with the release notes as the message (after a title line; they're
+   what installed copies show as "what's new") and push:
+   `git tag -a v0.3.0 -m "Hysj 0.3.0" -m "What changed, in a sentence or two."`
+   then `git push origin v0.3.0`.
 
 The Release workflow builds the app on an Apple Silicon runner, publishes the
 `.dmg`, and the update that installed copies pick up (`latest.json`, signed
