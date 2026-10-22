@@ -1,0 +1,50 @@
+name: Release
+
+# Push a tag like v0.2.0 (matching the version in Cargo.toml) to build Hysj
+# for Apple Silicon and publish it, with the signed update for the in-app
+# updater (latest.json). Builds are ad-hoc signed: no Apple Developer ID yet.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches Cargo.toml
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "Cargo.toml says $version, tag is $GITHUB_REF_NAME"; exit 1; }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crates/hysj-app/ui/package-lock.json
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/cache-cargo-install-action@v2
+        with:
+          tool: tauri-cli@2
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: crates/hysj-app
+          tauriScript: cargo tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: Hysj __VERSION__
+          releaseBody: |
+            For Macs with Apple Silicon (M1 or newer). Download the .dmg and drag Hysj to Applications.
+
+            This build isn't signed by Apple yet. The first time you open it, macOS blocks it: open
+            System Settings › Privacy & Security, scroll down and choose **Open Anyway** next to Hysj.
+            Later versions install themselves from inside the app.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true

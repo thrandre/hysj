@@ -7,7 +7,7 @@
   import AccountForm from '../components/AccountForm.svelte';
   import DigestHours from '../components/DigestHours.svelte';
 
-  let tab = $state<'accounts' | 'digest' | 'ai' | 'appearance' | 'about'>('accounts');
+
   /** The account being renamed, and the name typed so far. */
   let renaming = $state<string | null>(null);
   let newLabel = $state('');
@@ -17,8 +17,8 @@
   let version = $state('');
 
   $effect(() => {
-    if (tab === 'ai' && !ai) void api.aiSettings().then((s) => (ai = s));
-    if (tab === 'about' && !version) void api.appVersion().then((v) => (version = v));
+    if (app.settingsTab === 'ai' && !ai) void api.aiSettings().then((s) => (ai = s));
+    if (app.settingsTab === 'about' && !version) void api.appVersion().then((v) => (version = v));
   });
 
   async function rename(a: Account) {
@@ -40,11 +40,11 @@
   <p class="meta">Settings</p>
   <div class="tabs" role="tablist">
     {#each [['accounts', 'Accounts'], ['digest', 'Digest'], ['ai', 'On-device AI'], ['appearance', 'Appearance'], ['about', 'About']] as [id, label] (id)}
-      <button role="tab" aria-selected={tab === id} onclick={() => (tab = id as typeof tab)}>{label}</button>
+      <button role="tab" aria-selected={app.settingsTab === id} onclick={() => (app.settingsTab = id as typeof app.settingsTab)}>{label}</button>
     {/each}
   </div>
 
-  {#if tab === 'accounts'}
+  {#if app.settingsTab === 'accounts'}
     <h1 class="h1">{headline}</h1>
     <p class="lede">Someone you know in one account is known everywhere — they skip the Screener in all of them.</p>
     {#if n}
@@ -79,11 +79,11 @@
     {#key editing?.name}
       <AccountForm edit={editing} oncancel={() => (editing = null)} ondone={() => (editing = null)} />
     {/key}
-  {:else if tab === 'digest'}
+  {:else if app.settingsTab === 'digest'}
     <h1 class="h1">When should the rest arrive?</h1>
     <p class="lede">People reach you right away. Newsletters, notifications and receipts wait for your digest. Anything that can’t wait still comes through.</p>
     <DigestHours />
-  {:else if tab === 'ai'}
+  {:else if app.settingsTab === 'ai'}
     <h1 class="h1">Gists and replies are written on this Mac.</h1>
     <p class="lede">
       A small language model (Gemma 3 4B) reads only what reaches you — people’s mail and the latest digest — and writes one-line gists, suggested replies and
@@ -113,15 +113,47 @@
         </p>
       {/if}
     {/if}
-  {:else if tab === 'about'}
-    <h1 class="h1">Hysj {version}</h1>
-    <p class="lede">Built from this computer’s copy of Hysj. It doesn’t update itself yet: get the latest by building again (<span class="mono">cargo run</span>).</p>
+  {:else if app.settingsTab === 'about'}
+    {@const u = app.update}
+    <h1 class="h1">{u?.ready ? `Hysj ${u.ready} is ready to install.` : `You’re on Hysj ${version}.`}</h1>
+    <p class="lede">
+      {#if !u?.can_update}
+        This copy was built on this computer, so it doesn’t update itself: build again (<span class="mono">cargo run</span>) for the latest.
+      {:else if u.ready}
+        It’s downloaded and verified. Restart whenever it suits you — or it installs the next time you quit.
+      {:else}
+        Updates download quietly and install when you restart or quit.
+      {/if}
+    </p>
+    {#if u?.ready}
+      <section class="card news" aria-labelledby="h-new">
+        <h2 id="h-new">What’s new in {u.ready}</h2>
+        {#if u.notes}<p>{u.notes}</p>{/if}
+        <div class="row">
+          <button class="btn primary" onclick={() => api.updateRestart()}>Restart to update</button>
+        </div>
+      </section>
+    {/if}
     <div class="versions">
       {#each [['Hysj app', ''], ['Background service', 'updates with the app'], ['Command line (hysj)', 'updates with the app']] as [label, note] (label)}
         <div class="version"><span>{label}</span><span class="fine">{note}</span><span class="mono">{version}</span></div>
       {/each}
       <div class="version"><span>On-device AI</span><span class="fine">downloaded separately</span><span class="mono">Gemma 3 4B</span></div>
     </div>
+    {#if u?.can_update}
+      <section class="updates" aria-labelledby="h-upd">
+        <h2 id="h-upd">Updates</h2>
+        <label class="switch">
+          <input type="checkbox" checked={u.auto} onchange={(e) => api.updateAuto(e.currentTarget.checked).then((s) => (app.update = s))} />
+          <span>Check for updates automatically</span>
+        </label>
+        <p class="fine">Hysj asks GitHub a few times a day whether a new version exists. GitHub sees your IP address and version — nothing about your mail.</p>
+        <div class="row">
+          <button class="btn" onclick={() => act('Checking for updates…', () => api.updateCheck()).then((s) => s && (app.update = s))}>Check now</button>
+          {#if u.checked}<span class="fine">Last checked {new Date(u.checked * 1000).toLocaleString('en-GB', { weekday: 'long', hour: '2-digit', minute: '2-digit' })}</span>{/if}
+        </div>
+      </section>
+    {/if}
   {:else}
     <h1 class="h1">Light, dark, or follow the system.</h1>
     <div class="segmented" role="group" aria-label="Appearance">
@@ -221,6 +253,35 @@
     width: 20px;
     height: 20px;
     accent-color: var(--primary);
+  }
+  .news {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 24px;
+  }
+  .news h2,
+  .updates h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+  }
+  .news p {
+    margin: 0;
+    line-height: 1.55;
+    color: var(--body);
+  }
+  .updates {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
   }
   .versions {
     display: flex;

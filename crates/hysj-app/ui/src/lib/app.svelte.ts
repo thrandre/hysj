@@ -1,7 +1,7 @@
 // App state: the daemon's snapshot plus what the reader is looking at.
 
-import { api, onChanged, snapshot } from './api.ts';
-import type { MessageSummary, MessageView, Snapshot } from './types.ts';
+import { api, onChanged, onUpdateReady, snapshot } from './api.ts';
+import type { MessageSummary, MessageView, Snapshot, UpdateStatus } from './types.ts';
 import type { Go } from './hits.ts';
 import { lastSlot, setDigestHours } from './words.ts';
 
@@ -35,6 +35,10 @@ export const app = $state({
   showPast: false,
   /** Screener decisions this session, shown with Undo: [decision, name, subject]. */
   decided: [] as { sender: string; bucket: string; name: string; subject: string }[],
+  /** The app's update state ("Update ready" in the top strip). */
+  update: null as UpdateStatus | null,
+  /** Settings' open tab (the update pill opens About). */
+  settingsTab: 'accounts' as 'accounts' | 'digest' | 'ai' | 'appearance' | 'about',
   /** The first-run Welcome's step (0–4), or null once the Desk is open. */
   welcome: (new URLSearchParams(location.search).has('welcome') ? 0 : null) as number | null,
   /** What Hysj just learned from a correction ("Learned: …"), with Undo. */
@@ -142,6 +146,9 @@ export async function reload(): Promise<void> {
 export function start(): void {
   void reload();
   void onChanged(() => void reload());
+  const update = () => void api.updateStatus().then((s) => (app.update = s), () => {});
+  update();
+  void onUpdateReady(update);
 }
 
 /** Runs an action with a busy note; reloads after, errors land in the banner. */

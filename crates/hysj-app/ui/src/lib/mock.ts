@@ -33,6 +33,17 @@ export async function mock(name: string, args: Record<string, unknown>): Promise
     signal_list: () => s.signals ?? [],
     ai_settings: () => ({ enabled: true, on_battery: false, waiting_for_power: false, model: 'gemma3-4b-q4k', ...(args.set as object | null) }),
     app_version: () => '0.1.0',
+    // ?update in the preview shows a downloaded update.
+    update_status: () => ({
+      current: '0.1.0',
+      ready: new URLSearchParams(location.search).has('update') ? '0.2.0' : null,
+      notes: 'Notifications that can’t wait now reach you before the digest, and bookings get an Add to Wallet button.',
+      auto: true,
+      checked: Math.floor(Date.now() / 1000) - 3600,
+      can_update: true,
+    }),
+    update_check: () => answers.update_status(),
+    update_auto: () => answers.update_status(),
     digest_hours: () => {
       if (Array.isArray(args.hours)) s.digestHours = args.hours as number[];
       return s.digestHours ?? [8, 16];

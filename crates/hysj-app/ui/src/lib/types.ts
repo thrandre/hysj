@@ -22,3 +22,13 @@ export interface Snapshot {
   signals: Signal[];
   digestHours: number[];
 }
+
+/** The app's own update state (hysj-app's update.rs; not a daemon type). */
+export interface UpdateStatus {
+  current: string;
+  ready: string | null;
+  notes: string | null;
+  auto: boolean;
+  checked: number | null;
+  can_update: boolean;
+}

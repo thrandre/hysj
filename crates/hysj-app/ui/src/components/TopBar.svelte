@@ -2,6 +2,7 @@
   import { accountLabel, app, digestSplit, go } from '../lib/app.svelte.ts';
   import { earlier } from '../lib/digest.ts';
   import { hhmm, nextSlot } from '../lib/words.ts';
+  import UpdatePill from './UpdatePill.svelte';
 
   let next = $derived(hhmm(nextSlot(new Date())));
   let held = $derived(app.data ? digestSplit()[1].length : 0);
@@ -23,6 +24,7 @@
     {#if app.busy}
       <span class="busy">{app.busy}</span>
     {:else if app.view === 'desk' && app.data}
+      <UpdatePill />
       <span class="held"><span class="dot" aria-hidden="true"></span>{held} held for {next}</span>
       {#if app.data.accounts.length > 1}
         <div class="segmented" role="group" aria-label="Accounts">

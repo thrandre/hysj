@@ -3,7 +3,11 @@
   "productName": "Hysj",
   "identifier": "app.hysj.desktop",
   "build": {
-    "frontendDist": "ui/dist"
+    "frontendDist": "ui/dist",
+    "beforeBuildCommand": {
+      "script": "npm ci && npm run build",
+      "cwd": "ui"
+    }
   },
   "app": {
     "windows": [
@@ -16,7 +20,10 @@
         "minHeight": 560,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "trafficLightPosition": { "x": 22, "y": 36 }
+        "trafficLightPosition": {
+          "x": 22,
+          "y": 36
+        }
       }
     ],
     "security": {
@@ -24,7 +31,33 @@
     }
   },
   "bundle": {
-    "active": false,
-    "icon": ["icons/icon.png"]
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "category": "Productivity",
+    "shortDescription": "A noise-free mail client",
+    "copyright": "© 2026 Thomas René Westlund-Andresen · MIT",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "-"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVDMDJFNzlDMzcwM0VBMDkKUldRSjZnTTNuT2NDWERQNDBTUXFiaU1kVWhwUjEzdVBuM2JaWVlZWGxtZlBJa2dWT2swZEUvOGYK",
+      "endpoints": [
+        "https://github.com/thrandre/hysj/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

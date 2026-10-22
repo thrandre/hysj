@@ -10,7 +10,17 @@ Hysj is Norwegian for "hush".
 ## Status
 
 Early and personal. It runs on **Macs with Apple Silicon** (M1 or newer).
-There are no signed builds yet, so you build it yourself.
+
+## Install
+
+1. Download the `.dmg` from the [latest release](https://github.com/thrandre/hysj/releases/latest)
+   and drag Hysj to Applications.
+2. The builds aren't signed by Apple yet, so macOS blocks the first launch.
+   Open **System Settings › Privacy & Security**, scroll down and choose
+   **Open Anyway** next to Hysj.
+3. After that Hysj updates itself: new versions download in the background
+   and install when you restart or quit it. macOS asks for keychain access
+   again after each update — choose **Always Allow**.
 
 ## Build and run
 
@@ -47,6 +57,17 @@ product and architecture brief.
 cargo test --workspace           # Rust tests
 cd crates/hysj-app/ui && npm test   # UI tests
 ```
+
+## Releasing
+
+1. Bump `version` in the root `Cargo.toml` and commit.
+2. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
+
+The Release workflow builds the app on an Apple Silicon runner, publishes the
+`.dmg`, and the update that installed copies pick up (`latest.json`, signed
+with the updater key in the repository secrets). A local build:
+`cargo install tauri-cli --version "^2"`, then `cargo tauri build` in
+`crates/hysj-app`.
 
 ## License
 

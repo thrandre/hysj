@@ -27,6 +27,7 @@ import type {
   Signal,
   Snapshot,
   SyncResult,
+  UpdateStatus,
 } from './types.ts';
 
 const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -67,6 +68,10 @@ export const api = {
   digestHours: (hours?: number[]) => call<number[]>('digest_hours', { hours: hours ?? null }),
   aiSettings: (set?: AiSettings) => call<AiSettings>('ai_settings', { set: set ?? null }),
   appVersion: () => call<string>('app_version'),
+  updateStatus: () => call<UpdateStatus>('update_status'),
+  updateCheck: () => call<UpdateStatus>('update_check'),
+  updateAuto: (on: boolean) => call<UpdateStatus>('update_auto', { on }),
+  updateRestart: () => call<null>('update_restart'),
   messageView: (id: string) => call<MessageView>('message_view', { id }),
   senderImages: (sender: string, allow: boolean) => call<null>('sender_images', { sender, allow }),
   /** Saves to Downloads; opens it if that's safe, else shows it in Finder. Returns the path. */
@@ -78,6 +83,13 @@ export async function onChanged(f: () => void): Promise<void> {
   if (!inTauri) return;
   const { listen } = await import('@tauri-apps/api/event');
   await listen('changed', f);
+}
+
+/** Calls `f` when an update has been downloaded and is ready to install. */
+export async function onUpdateReady(f: () => void): Promise<void> {
+  if (!inTauri) return;
+  const { listen } = await import('@tauri-apps/api/event');
+  await listen('update-ready', f);
 }
 
 export async function snapshot(): Promise<Snapshot> {

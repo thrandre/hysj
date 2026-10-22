@@ -7,6 +7,8 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod update;
+
 use std::time::Duration;
 
 use hysj_core::{Client, ClientError};
@@ -120,6 +122,30 @@ async fn ai_settings(
     match set {
         Some(s) => b.call(method::AI_SETTINGS, s).await,
         None => b.call(method::AI_SETTINGS, ()).await,
+    }
+}
+
+#[tauri::command]
+fn update_status(app: tauri::AppHandle) -> update::UpdateStatus {
+    update::status(&app)
+}
+
+#[tauri::command]
+async fn update_check(app: tauri::AppHandle) -> Res<update::UpdateStatus> {
+    update::check(&app).await
+}
+
+#[tauri::command]
+fn update_auto(app: tauri::AppHandle, on: bool) -> Res<update::UpdateStatus> {
+    update::set_auto(&app, on).map_err(|e| e.to_string())?;
+    Ok(update::status(&app))
+}
+
+/// Installs the downloaded update and starts the new version.
+#[tauri::command]
+fn update_restart(app: tauri::AppHandle) {
+    if update::install(&app) {
+        app.restart();
     }
 }
 
@@ -373,7 +399,9 @@ fn main() {
         .with_writer(std::io::stderr)
         .init();
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Bridge(Mutex::new(None)))
+        .manage(update::Pending::default())
         .invoke_handler(tauri::generate_handler![
             account_list,
             identity_list,
@@ -388,6 +416,10 @@ fn main() {
             digest_hours,
             ai_settings,
             app_version,
+            update_status,
+            update_check,
+            update_auto,
+            update_restart,
             account_label,
             signal_hold,
             booking_list,
@@ -410,10 +442,17 @@ fn main() {
         ])
         .setup(|app| {
             tauri::async_runtime::spawn(forward_changes(app.handle().clone()));
+            tauri::async_runtime::spawn(update::background(app.handle().clone()));
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("Hysj window");
+        .build(tauri::generate_context!())
+        .expect("Hysj window")
+        .run(|app, event| {
+            // "When I quit": a downloaded update installs on the way out.
+            if let tauri::RunEvent::Exit = event {
+                update::install(app);
+            }
+        });
 }
 
 #[cfg(test)]
