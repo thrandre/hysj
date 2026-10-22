@@ -25,10 +25,20 @@ pub struct OAuthConfig {
     pub token: &'static str,
     pub scopes: &'static str,
     pub client_id: &'static str,
+    /// Google requires one even for desktop apps (where it can't stay secret);
+    /// set at build time, never in the repo. Empty: none sent.
+    pub client_secret: &'static str,
+    /// Extra sign-in page parameters (Google: offline access, consent).
+    pub extra: &'static [(&'static str, &'static str)],
+    /// What to expect on the provider's pages, for the add-account form.
+    pub notes: &'static [&'static str],
 }
 
 /// Every OAuth provider Hysj knows (see `provider.rs` for who uses which).
-pub const CONFIGS: &[&OAuthConfig] = &[&crate::provider::MICROSOFT_OAUTH];
+pub const CONFIGS: &[&OAuthConfig] = &[
+    &crate::provider::MICROSOFT_OAUTH,
+    &crate::provider::GOOGLE_OAUTH,
+];
 
 /// The keychain entry for a refresh token.
 pub fn secret(cfg: &OAuthConfig, refresh: &str) -> String {
@@ -83,22 +93,20 @@ pub async fn start(cfg: &'static OAuthConfig, address: &str) -> Result<Pending, 
     let verifier = random(48);
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let state = random(16);
-    let url = reqwest::Url::parse_with_params(
-        cfg.authorize,
-        &[
-            ("client_id", cfg.client_id),
-            ("response_type", "code"),
-            ("redirect_uri", &redirect),
-            ("scope", cfg.scopes),
-            ("code_challenge", &challenge),
-            ("code_challenge_method", "S256"),
-            ("state", &state),
-            ("login_hint", address),
-            ("prompt", "select_account"),
-        ],
-    )
-    .expect("a valid URL")
-    .to_string();
+    let mut params = vec![
+        ("client_id", cfg.client_id),
+        ("response_type", "code"),
+        ("redirect_uri", redirect.as_str()),
+        ("scope", cfg.scopes),
+        ("code_challenge", challenge.as_str()),
+        ("code_challenge_method", "S256"),
+        ("state", state.as_str()),
+        ("login_hint", address),
+    ];
+    params.extend_from_slice(cfg.extra);
+    let url = reqwest::Url::parse_with_params(cfg.authorize, &params)
+        .expect("a valid URL")
+        .to_string();
     Ok(Pending {
         cfg,
         url,
@@ -132,9 +140,13 @@ impl Tokens {
 }
 
 async fn token(cfg: &OAuthConfig, form: &[(&str, &str)]) -> Result<Tokens, OAuthError> {
+    let mut form = form.to_vec();
+    if !cfg.client_secret.is_empty() {
+        form.push(("client_secret", cfg.client_secret));
+    }
     let resp = reqwest::Client::new()
         .post(cfg.token)
-        .form(form)
+        .form(&form)
         .send()
         .await?;
     if !resp.status().is_success() {

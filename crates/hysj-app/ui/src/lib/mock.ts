@@ -27,17 +27,17 @@ export async function mock(name: string, args: Record<string, unknown>): Promise
         id: ms ? 'microsoft' : gmail ? 'gmail' : 'generic',
         name: ms ? 'Outlook.com' : gmail ? 'Gmail' : d,
         known: ms || gmail,
-        auth: ms ? 'oauth' : gmail ? 'command_line' : 'password',
+        auth: ms || gmail ? 'oauth' : 'password',
         imap_host: ms ? 'outlook.office365.com' : gmail ? 'imap.gmail.com' : `imap.${d}`,
         imap_port: 993,
         smtp_host: ms ? 'smtp-mail.outlook.com' : gmail ? 'smtp.gmail.com' : `smtp.${d}`,
         smtp_port: ms ? 587 : 465,
         help_url: null,
-        help_label: gmail ? 'Hysj doesn’t add Gmail accounts from the app. Google only lets mail apps in with an app password, which takes some setup and may stop working.' : null,
+        help_label: null,
         help_steps: gmail
-          ? ['Turn on 2-Step Verification for your Google account, then create an app password at myaccount.google.com/apppasswords.', 'In Terminal, in Hysj’s source code, run: cargo run -p hysj-cli -- account add you@gmail.com — and paste the app password when asked.']
+          ? ['Google will say it hasn’t verified Hysj — it’s a small app Google hasn’t reviewed. Choose Advanced, then Go to Hysj.', 'Then allow Hysj to read, send and manage your mail.']
           : [],
-        sign_in_with: ms ? 'Microsoft' : null,
+        sign_in_with: ms ? 'Microsoft' : gmail ? 'Google' : null,
       };
     },
     account_label: () => {

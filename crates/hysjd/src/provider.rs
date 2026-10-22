@@ -21,6 +21,38 @@ pub const MICROSOFT_OAUTH: OAuthConfig = OAuthConfig {
         Some(id) => id,
         None => "e0bb8300-4325-43b9-803e-c6a894c4f02f",
     },
+    client_secret: "",
+    extra: &[("prompt", "select_account")],
+    notes: &[
+        "Outlook.com and Hotmail don’t take passwords from mail apps any more.",
+        "Microsoft may say Hysj isn’t verified; that’s expected for a small app. Accept, then allow Hysj to read and send your mail.",
+    ],
+};
+
+/// Hysj's Google Cloud OAuth client (desktop app, Gmail's IMAP/SMTP scope;
+/// unverified, so Google warns and allows 100 people). The client secret
+/// comes from `HYSJ_GOOGLE_CLIENT_SECRET` at build time (a release secret on
+/// GitHub; the keychain locally): without it, Gmail is command line only.
+pub const GOOGLE_OAUTH: OAuthConfig = OAuthConfig {
+    key: "google",
+    name: "Google",
+    authorize: "https://accounts.google.com/o/oauth2/v2/auth",
+    token: "https://oauth2.googleapis.com/token",
+    scopes: "https://mail.google.com/",
+    client_id: match option_env!("HYSJ_GOOGLE_CLIENT_ID") {
+        Some(id) => id,
+        None => "804814055127-26et2p3r52q1nt7l8tcbo4t7l2tsaafm.apps.googleusercontent.com",
+    },
+    client_secret: match option_env!("HYSJ_GOOGLE_CLIENT_SECRET") {
+        Some(s) => s,
+        None => "",
+    },
+    // A refresh token, and asked for again when one is missing.
+    extra: &[("access_type", "offline"), ("prompt", "consent")],
+    notes: &[
+        "Google will say it hasn’t verified Hysj — it’s a small app Google hasn’t reviewed. Choose Advanced, then Go to Hysj.",
+        "Then allow Hysj to read, send and manage your mail.",
+    ],
 };
 
 pub enum Auth {
@@ -57,15 +89,18 @@ pub const PROVIDERS: &[Provider] = &[
         domains: &["gmail.com", "googlemail.com"],
         imap: ("imap.gmail.com", 993),
         smtp: ("smtp.gmail.com", 465),
-        // Google's app passwords are fragile (2-Step Verification first,
-        // may be phased out) and its OAuth for mail needs a security review:
-        // the app doesn't offer Gmail; the command line can add it.
-        auth: Auth::CommandLine {
-            why: "Hysj doesn’t add Gmail accounts from the app. Google only lets mail apps in with an app password, which takes some setup and may stop working.",
-            steps: &[
-                "Turn on 2-Step Verification for your Google account, then create an app password at myaccount.google.com/apppasswords.",
-                "In Terminal, in Hysj’s source code, run: cargo run -p hysj-cli -- account add you@gmail.com — and paste the app password when asked.",
-            ],
+        // Sign in with Google when this build has the client secret; else
+        // the command line (app passwords are fragile and may be phased out).
+        auth: if GOOGLE_OAUTH.client_secret.is_empty() {
+            Auth::CommandLine {
+                why: "Hysj doesn’t add Gmail accounts from the app. Google only lets mail apps in with an app password, which takes some setup and may stop working.",
+                steps: &[
+                    "Turn on 2-Step Verification for your Google account, then create an app password at myaccount.google.com/apppasswords.",
+                    "In Terminal, in Hysj’s source code, run: cargo run -p hysj-cli -- account add you@gmail.com — and paste the app password when asked.",
+                ],
+            }
+        } else {
+            Auth::OAuth2(&GOOGLE_OAUTH)
         },
     },
     Provider {
@@ -176,7 +211,13 @@ pub fn discover(address: &str) -> ProviderInfo {
                     steps.iter().map(|s| s.to_string()).collect(),
                     None,
                 ),
-                Auth::OAuth2(cfg) => ("oauth", None, None, Vec::new(), Some(cfg.name.to_string())),
+                Auth::OAuth2(cfg) => (
+                    "oauth",
+                    None,
+                    None,
+                    cfg.notes.iter().map(|s| s.to_string()).collect(),
+                    Some(cfg.name.to_string()),
+                ),
                 Auth::CommandLine { why, steps } => (
                     "command_line",
                     None,
@@ -234,7 +275,12 @@ mod tests {
         assert_eq!(id("kari@hotmailer.example"), None);
         assert_eq!(id("kari@example.no"), None);
         assert!(oauth_for("kari@hotmail.com").is_some());
-        assert!(oauth_for("kari@gmail.com").is_none());
+        assert_eq!(
+            oauth_for("kari@gmail.com").is_some(),
+            !GOOGLE_OAUTH.client_secret.is_empty(),
+            "Gmail signs in with Google when the build has the secret"
+        );
+        assert!(oauth_for("kari@example.no").is_none());
     }
 
     #[test]
@@ -250,10 +296,15 @@ mod tests {
             (false, "password", "imap.example.no", "smtp.example.no")
         );
         let g = discover("kari@gmail.com");
+        let expected = if GOOGLE_OAUTH.client_secret.is_empty() {
+            "command_line"
+        } else {
+            "oauth"
+        };
         assert_eq!(
             (g.auth.as_str(), g.imap_host.as_str()),
-            ("command_line", "imap.gmail.com"),
-            "the command line still gets Gmail's servers"
+            (expected, "imap.gmail.com"),
+            "Google sign-in with the client secret, else the command line"
         );
         let y = discover("kari@yahoo.no");
         assert_eq!((y.auth.as_str(), y.help_steps.len()), ("app_password", 3));

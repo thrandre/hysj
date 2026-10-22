@@ -124,9 +124,10 @@
   {#if domain && info}
     {#if info.auth === 'oauth'}
       <p>
-        {info.name} doesn’t take passwords from mail apps. Sign in with {info.sign_in_with} in your browser instead — Hysj never sees your password, and you can
-        remove its access any time in your {info.sign_in_with} account.
+        Sign in with {info.sign_in_with} in your browser — Hysj never sees your password, and you can remove its access any time in your
+        {info.sign_in_with} account.
       </p>
+      {#each info.help_steps as note (note)}<span class="fine">{note}</span>{/each}
       <div class="row">
         <button class="btn primary" disabled={adding} onclick={signIn}>
           {adding ? `Waiting for ${info.sign_in_with}…` : edit ? 'Sign in again' : `Sign in with ${info.sign_in_with}`}
