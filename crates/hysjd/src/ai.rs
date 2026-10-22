@@ -268,6 +268,16 @@ async fn has_work(hub: &Hub, model: &str) -> bool {
     jobs || senders || bookings || !d.digest_to_write(model).is_empty()
 }
 
+/// The Mac is running on battery (`pmset`); false when it can't tell.
+/// ponytail: asks pmset every 30 s; IOKit power notifications if that matters.
+pub async fn on_battery_power() -> bool {
+    tokio::process::Command::new("pmset")
+        .args(["-g", "batt"])
+        .output()
+        .await
+        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("'Battery Power'"))
+}
+
 pub async fn run(hub: Arc<Hub>) {
     // Offline runs (screenshots, store copies) never load a model.
     if std::env::var_os("HYSJ_NO_SYNC").is_some() || std::env::var_os("HYSJ_NO_AI").is_some() {
@@ -281,8 +291,17 @@ pub async fn run(hub: Arc<Hub>) {
             tracing::info!("model idle; unloading");
             llm = None;
         }
-        // Turned off in Settings: rules only, and the memory back.
-        if !hub.daemon.lock().await.store.ai_enabled().unwrap_or(true) {
+        // Turned off in Settings: rules only, and the memory back. On
+        // battery it waits for the charger unless the reader said otherwise
+        // (a fanless Air gets hot and drains fast while it writes).
+        let (enabled, on_battery) = {
+            let d = hub.daemon.lock().await;
+            (
+                d.store.ai_enabled().unwrap_or(true),
+                d.store.ai_on_battery().unwrap_or(false),
+            )
+        };
+        if !enabled || (!on_battery && on_battery_power().await) {
             llm = None;
             tokio::time::sleep(EVERY).await;
             continue;

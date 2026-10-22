@@ -26,8 +26,8 @@
     if ((await act(null, () => api.accountLabel(a.name, label || null))) !== undefined) renaming = null;
   }
 
-  async function setAi(enabled: boolean) {
-    const s = await act(null, () => api.aiSettings(enabled));
+  async function setAi(change: Partial<AiSettings>) {
+    const s = await act(null, () => api.aiSettings({ ...ai!, ...change }));
     if (s) ai = s;
   }
 
@@ -96,11 +96,21 @@
     </div>
     {#if ai}
       <label class="switch">
-        <input type="checkbox" checked={ai.enabled} onchange={(e) => setAi(e.currentTarget.checked)} />
+        <input type="checkbox" checked={ai.enabled} onchange={(e) => setAi({ enabled: e.currentTarget.checked })} />
         <span>Use the on-device AI</span>
       </label>
       {#if !ai.enabled}
         <p class="fine">Sorting still works with rules alone. You’ll see subject lines instead of summaries.</p>
+      {:else}
+        <label class="switch">
+          <input type="checkbox" checked={!ai.on_battery} onchange={(e) => setAi({ on_battery: !e.currentTarget.checked })} />
+          <span>Pause on battery</span>
+        </label>
+        <p class="fine">
+          {ai.waiting_for_power
+            ? 'Waiting for the charger: summaries catch up when you plug in.'
+            : 'Writing summaries works the processor hard; on battery it waits until you plug in.'}
+        </p>
       {/if}
     {/if}
   {:else if tab === 'about'}

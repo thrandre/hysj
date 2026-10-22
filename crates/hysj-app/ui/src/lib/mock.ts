@@ -31,7 +31,7 @@ export async function mock(name: string, args: Record<string, unknown>): Promise
     booking_list: () => s.bookings,
     order_list: () => s.orders,
     signal_list: () => s.signals ?? [],
-    ai_settings: () => ({ enabled: args.enabled ?? true, model: 'gemma3-4b-q4k' }),
+    ai_settings: () => ({ enabled: true, on_battery: false, waiting_for_power: false, model: 'gemma3-4b-q4k', ...(args.set as object | null) }),
     app_version: () => '0.1.0',
     digest_hours: () => {
       if (Array.isArray(args.hours)) s.digestHours = args.hours as number[];

@@ -339,6 +339,19 @@ impl Store {
         self.set_digest_setting("ai_off", !on)
     }
 
+    /// Whether the AI may run on battery (off unless the reader allows it).
+    pub fn ai_on_battery(&self) -> Result<bool, StoreError> {
+        self.db.query_row(
+            "SELECT EXISTS (SELECT 1 FROM meta WHERE key = 'ai_on_battery')",
+            [],
+            |r| r.get(0),
+        )
+    }
+
+    pub fn set_ai_on_battery(&self, on: bool) -> Result<(), StoreError> {
+        self.set_digest_setting("ai_on_battery", on)
+    }
+
     /// The reader's digest hours (empty: never chosen, the default applies).
     pub fn digest_hours(&self) -> Result<Vec<i8>, StoreError> {
         let v: Option<String> = self

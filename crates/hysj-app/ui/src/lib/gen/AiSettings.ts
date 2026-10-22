@@ -8,4 +8,12 @@ enabled: boolean,
 /**
  * The model it uses ("gemma3-4b-q4k"); ignored when setting.
  */
-model: string, };
+model: string, 
+/**
+ * Keep writing on battery power (else it waits for the charger).
+ */
+on_battery: boolean, 
+/**
+ * The Mac is on battery right now (so the AI is waiting); ignored when setting.
+ */
+waiting_for_power: boolean, };

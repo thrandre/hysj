@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Bumped on any incompatible change to the types below.
-pub const PROTOCOL_VERSION: u32 = 20;
+pub const PROTOCOL_VERSION: u32 = 21;
 
 // --- JSON-RPC 2.0 envelopes -------------------------------------------------
 
@@ -700,6 +700,12 @@ pub struct AiSettings {
     /// The model it uses ("gemma3-4b-q4k"); ignored when setting.
     #[serde(default)]
     pub model: String,
+    /// Keep writing on battery power (else it waits for the charger).
+    #[serde(default)]
+    pub on_battery: bool,
+    /// The Mac is on battery right now (so the AI is waiting); ignored when setting.
+    #[serde(default)]
+    pub waiting_for_power: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

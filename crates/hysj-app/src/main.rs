@@ -113,18 +113,12 @@ async fn account_label(b: State<'_, Bridge>, name: String, label: Option<String>
 }
 
 #[tauri::command]
-async fn ai_settings(b: State<'_, Bridge>, enabled: Option<bool>) -> Res<hysj_proto::AiSettings> {
-    match enabled {
-        Some(enabled) => {
-            b.call(
-                method::AI_SETTINGS,
-                hysj_proto::AiSettings {
-                    enabled,
-                    model: String::new(),
-                },
-            )
-            .await
-        }
+async fn ai_settings(
+    b: State<'_, Bridge>,
+    set: Option<hysj_proto::AiSettings>,
+) -> Res<hysj_proto::AiSettings> {
+    match set {
+        Some(s) => b.call(method::AI_SETTINGS, s).await,
         None => b.call(method::AI_SETTINGS, ()).await,
     }
 }

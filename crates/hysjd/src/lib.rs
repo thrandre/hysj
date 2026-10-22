@@ -925,10 +925,17 @@ async fn dispatch(req: Request, daemon: &mut Daemon, conn: &mut Conn) -> Result<
                     .store
                     .set_ai_enabled(p.enabled)
                     .map_err(backend_err)?;
+                daemon
+                    .store
+                    .set_ai_on_battery(p.on_battery)
+                    .map_err(backend_err)?;
             }
+            let on_battery = daemon.store.ai_on_battery().map_err(backend_err)?;
             to_value(hysj_proto::AiSettings {
                 enabled: daemon.store.ai_enabled().map_err(backend_err)?,
                 model: crate::ai::MODEL.version().to_string(),
+                on_battery,
+                waiting_for_power: !on_battery && crate::ai::on_battery_power().await,
             })
         }
         method::DIGEST_HOURS => {
