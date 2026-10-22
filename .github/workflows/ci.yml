@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    # Apple Silicon: the on-device AI builds with Metal.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crates/hysj-app/ui/package-lock.json
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - name: UI checks
+        working-directory: crates/hysj-app/ui
+        run: |
+          npm ci
+          npm run types
+          # The committed types match hysj-proto.
+          test -z "$(git status --porcelain -- src/lib/gen)" || { git status -- src/lib/gen; exit 1; }
+          npm run check
+          npm test

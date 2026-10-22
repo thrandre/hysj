@@ -1,0 +1,46 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+# `cargo run` in the root launches the app.
+default-members = ["crates/hysj-app"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+publish = false
+
+[workspace.dependencies]
+hysj-core = { path = "crates/hysj-core" }
+hysj-proto = { path = "crates/hysj-proto" }
+hysjd = { path = "crates/hysjd" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "time", "io-util", "process"] }
+clap = { version = "4", features = ["derive"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+hysj-imap = { path = "crates/hysj-imap" }
+hysj-ai = { path = "crates/hysj-ai" }
+async-imap = { version = "0.12", default-features = false, features = ["runtime-tokio"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "tls12", "ring"] }
+rustls-platform-verifier = "0.7"
+rusqlite = { version = "0.40", features = ["bundled"] }
+mail-parser = "0.11"
+# Mail HTML for the app, sanitised (no scripts, handlers, forms or remote loads).
+ammonia = "4"
+scraper = "0.25"
+base64 = "0.22"
+keyring = "4"
+rpassword = "7"
+dirs = "6"
+futures-util = "0.3"
+jiff = "0.2"
+mistralrs = { version = "0.8", features = ["metal"] }
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls", "ring", "rustls-platform-verifier"] }
+
+# Dependencies (mistral.rs, candle, …) optimised even in dev builds: local
+# inference is unusably slow unoptimised, and `cargo run` runs the daemon.
+[profile.dev.package."*"]
+opt-level = 3

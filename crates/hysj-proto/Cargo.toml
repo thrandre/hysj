@@ -1,0 +1,15 @@
+[package]
+name = "hysj-proto"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+ts-rs = { version = "12", optional = true }
+
+[features]
+# TypeScript types for the app's UI: `cargo test -p hysj-proto --features ts`
+# writes them to crates/hysj-app/ui/src/lib/gen (see .cargo/config.toml).
+ts = ["dep:ts-rs"]

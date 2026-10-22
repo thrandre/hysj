@@ -1,0 +1,279 @@
+/* Design tokens from the mockups (light: Desk, Digest, …; dark: "Desk — dark").
+   Components use only these variables, never colours of their own. */
+
+@font-face {
+  font-family: 'Instrument Sans';
+  src: url('/fonts/InstrumentSans.ttf') format('truetype');
+  font-weight: 400 700;
+  font-display: block;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono.ttf') format('truetype');
+  font-weight: 400 500;
+  font-display: block;
+}
+
+:root {
+  --ground: #f2f2ef;
+  --surface: #ffffff;
+  --raised: #e6e6e2;
+  --field: #f2f2ef;
+  --segment: #ffffff;
+  --line: #ededea;
+  --ink: #111111;
+  --body: #2a2c30;
+  --secondary: #55575c;
+  --muted: #6a6c71;
+  --accent: #c83a14;
+  --primary: #111111;
+  --on-primary: #ffffff;
+  --bubble: #f2f2ef;
+  --on-bubble: #111111;
+  --nav: rgba(17, 17, 17, 0.92);
+  --on-nav: #ffffff;
+  --nav-count: #b9bbc0;
+  --nav-on: rgba(255, 255, 255, 0.14);
+  --ok-bg: #dcebe3;
+  --ok: #1f5a40;
+  --warn-bg: #f6e3d0;
+  --warn: #8a4b0f;
+  --danger: #b42318;
+  --error-bg: #fbe7e4;
+  --error: #8f1d13;
+  --acct-0: #e38b3a;
+  --acct-0-bg: #f6e3d0;
+  --acct-1: #2e7d5b;
+  --acct-1-bg: #dcebe3;
+  --acct-2: #5b4bdb;
+  --acct-2-bg: #e4e1fa;
+  --acct-3: #2f6fb5;
+  --acct-3-bg: #dce6f3;
+  --shadow-sm: 0 8px 24px rgba(17, 17, 17, 0.06);
+  --shadow-md: 0 2px 4px rgba(17, 17, 17, 0.03), 0 18px 48px rgba(17, 17, 17, 0.09);
+  --shadow-lg: 0 2px 4px rgba(17, 17, 17, 0.04), 0 24px 60px rgba(17, 17, 17, 0.16);
+  --shadow-nav: 0 12px 32px rgba(17, 17, 17, 0.25);
+  --mail-paper: #ffffff;
+
+  --sans: 'Instrument Sans', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --ground: #141413;
+    --surface: #1e1e1c;
+    --raised: #2a2a27;
+    --field: #2a2a27;
+    --segment: #3a3a36;
+    --line: #2a2a27;
+    --ink: #f2f2ef;
+    --body: #d6d6d2;
+    --secondary: #a9a9a3;
+    --muted: #8f8f89;
+    --accent: #ff7a4d;
+    --primary: #f2f2ef;
+    --on-primary: #141413;
+    --bubble: #2a2a27;
+    --on-bubble: #f2f2ef;
+    --nav: rgba(242, 242, 239, 0.95);
+    --on-nav: #141413;
+    --nav-count: #55575c;
+    --nav-on: rgba(20, 20, 19, 0.1);
+    --ok-bg: #17352a;
+    --ok: #8fd6ae;
+    --warn-bg: #3a2a1c;
+    --warn: #f0b27a;
+    --danger: #ff8a7a;
+    --error-bg: #3a1f1b;
+    --error: #ffb4a8;
+    --acct-0: #f0a35e;
+    --acct-0-bg: #3a2a1c;
+    --acct-1: #4fb386;
+    --acct-1-bg: #20362b;
+    --acct-2: #9d90ff;
+    --acct-2-bg: #2a2640;
+    --acct-3: #7fb0e8;
+    --acct-3-bg: #1e2a38;
+    --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 8px 24px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 18px 48px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 24px 60px rgba(0, 0, 0, 0.55);
+    --shadow-nav: 0 12px 32px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --ground: #141413;
+  --surface: #1e1e1c;
+  --raised: #2a2a27;
+  --field: #2a2a27;
+  --segment: #3a3a36;
+  --line: #2a2a27;
+  --ink: #f2f2ef;
+  --body: #d6d6d2;
+  --secondary: #a9a9a3;
+  --muted: #8f8f89;
+  --accent: #ff7a4d;
+  --primary: #f2f2ef;
+  --on-primary: #141413;
+  --bubble: #2a2a27;
+  --on-bubble: #f2f2ef;
+  --nav: rgba(242, 242, 239, 0.95);
+  --on-nav: #141413;
+  --nav-count: #55575c;
+  --nav-on: rgba(20, 20, 19, 0.1);
+  --ok-bg: #17352a;
+  --ok: #8fd6ae;
+  --warn-bg: #3a2a1c;
+  --warn: #f0b27a;
+  --danger: #ff8a7a;
+  --error-bg: #3a1f1b;
+  --error: #ffb4a8;
+  --acct-0: #f0a35e;
+  --acct-0-bg: #3a2a1c;
+  --acct-1: #4fb386;
+  --acct-1-bg: #20362b;
+  --acct-2: #9d90ff;
+  --acct-2-bg: #2a2640;
+  --acct-3: #7fb0e8;
+  --acct-3-bg: #1e2a38;
+  --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 18px 48px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 24px 60px rgba(0, 0, 0, 0.55);
+  --shadow-nav: 0 12px 32px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  /* A desktop app: no rubber-band page, no selecting the chrome by accident. */
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#app {
+  height: 100%;
+}
+a {
+  color: var(--ink);
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+button {
+  cursor: pointer;
+}
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.mono {
+  font-family: var(--mono);
+}
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+/* Shared controls (the mockups' buttons). */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--field);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.btn.primary {
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+}
+.btn.raised {
+  background: var(--raised);
+}
+.btn.ghost {
+  background: transparent;
+}
+.btn.danger {
+  background: transparent;
+  color: var(--danger);
+}
+.btn.small {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--ink);
+  font-size: 13px;
+}
+.card {
+  background: var(--surface);
+  border-radius: 20px;
+  box-shadow: var(--shadow-sm);
+}
+.meta {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+.lede {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--body);
+}
+.empty {
+  padding: 28px;
+  border-radius: 22px;
+  border: 1px dashed var(--muted);
+  color: var(--secondary);
+  font-size: 17px;
+}

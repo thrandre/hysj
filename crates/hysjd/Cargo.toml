@@ -1,0 +1,25 @@
+[package]
+name = "hysjd"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+hysj-core.workspace = true
+hysj-proto.workspace = true
+hysj-imap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+tracing-subscriber.workspace = true
+jiff.workspace = true
+keyring.workspace = true
+dirs.workspace = true
+hysj-ai.workspace = true
+mail-parser.workspace = true
+base64.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

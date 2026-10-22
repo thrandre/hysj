@@ -1,0 +1,5 @@
+[env]
+# Where `cargo test -p hysj-proto --features ts` writes the UI's TypeScript types,
+# with JSON numbers as `number` (unix seconds and counts fit easily).
+TS_RS_EXPORT_DIR = { value = "crates/hysj-app/ui/src/lib/gen", relative = true }
+TS_RS_LARGE_INT = "number"

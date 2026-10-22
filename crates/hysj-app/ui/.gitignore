@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# A dump of real mail for UI work (`hysj rpc`); never committed.
+public/snapshot.local.json
