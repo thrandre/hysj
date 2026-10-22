@@ -15,10 +15,10 @@ use tokio::net::TcpListener;
 
 /// Hysj's app registration with Microsoft (Entra ID, "personal Microsoft
 /// accounts", public client). Not a secret: every copy of the app carries it.
-/// ponytail: empty until registered; `HYSJ_MS_CLIENT_ID` at build time also works.
+/// `HYSJ_MS_CLIENT_ID` at build time overrides it (a fork's own registration).
 pub const MS_CLIENT_ID: &str = match option_env!("HYSJ_MS_CLIENT_ID") {
     Some(id) => id,
-    None => "",
+    None => "e0bb8300-4325-43b9-803e-c6a894c4f02f",
 };
 const AUTHORIZE: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
 const TOKEN: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
