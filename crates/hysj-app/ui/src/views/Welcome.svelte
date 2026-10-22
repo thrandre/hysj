@@ -59,7 +59,7 @@
     {:else if step === 1}
       <div class="panel">
         <h1>Add your mail.</h1>
-        <p class="lede">Gmail, your own domain, or both. They all land on one Desk.</p>
+        <p class="lede">Outlook.com, iCloud, your own domain — or several. They all land on one Desk.</p>
         {#each accounts as a (a.name)}
           <div class="added card">
             <span class="dot" style:background="var(--acct-{accountSlot(a.name)})" aria-hidden="true"></span>

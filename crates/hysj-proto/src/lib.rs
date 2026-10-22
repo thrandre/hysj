@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Bumped on any incompatible change to the types below.
-pub const PROTOCOL_VERSION: u32 = 23;
+pub const PROTOCOL_VERSION: u32 = 24;
 
 // --- JSON-RPC 2.0 envelopes -------------------------------------------------
 
@@ -109,6 +109,8 @@ pub mod method {
     pub const SYNC: &str = "sync";
     pub const ACCOUNT_ADD: &str = "account/add";
     pub const ACCOUNT_LIST: &str = "account/list";
+    /// Who an address belongs to, how it signs in, and its servers.
+    pub const ACCOUNT_DISCOVER: &str = "account/discover";
     /// "Sign in with Microsoft": the page to open in the browser.
     pub const ACCOUNT_OAUTH_START: &str = "account/oauth_start";
     /// Waits for that sign-in to finish, then adds the account.
@@ -345,6 +347,31 @@ pub struct Account {
     /// What the reader calls it ("Work"); the UI shows `name` without one.
     #[serde(default)]
     pub label: Option<String>,
+}
+
+/// What the add-account form needs to know about an address.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct ProviderInfo {
+    /// "gmail", "microsoft", "icloud", "yahoo", "fastmail" or "generic".
+    pub id: String,
+    /// "Gmail"; for an unknown domain, the domain.
+    pub name: String,
+    /// A provider Hysj knows (else the servers are a guess).
+    pub known: bool,
+    /// "password", "app_password", "oauth" or "command_line" (not added from
+    /// the app: `help_label` says why, `help_steps` how).
+    pub auth: String,
+    pub imap_host: String,
+    pub imap_port: u16,
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    /// Where to make an app password, the link's name, and the steps.
+    pub help_url: Option<String>,
+    pub help_label: Option<String>,
+    pub help_steps: Vec<String>,
+    /// "Microsoft", for "Sign in with Microsoft".
+    pub sign_in_with: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

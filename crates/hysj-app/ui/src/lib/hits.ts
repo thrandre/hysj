@@ -83,7 +83,7 @@ export function hits(s: Snapshot, now: number): Hit[] {
     { kind: 'Focus', label: 'One at a time', hint: 'R reply · E done · H later · → skip', go: { view: 'focus' } },
     { kind: 'Sent', label: 'Sent mail', hint: 'newest first', go: { view: 'sent' } },
     { kind: 'Done', label: 'Done — cleared mail', hint: 'restore from here', go: { view: 'done' } },
-    { kind: 'Settings', label: 'Add an account', hint: 'Gmail or your own domain', go: { view: 'settings' } },
+    { kind: 'Settings', label: 'Add an account', hint: 'Outlook.com, iCloud or your own domain', go: { view: 'settings' } },
     { kind: 'Settings', label: 'Appearance', hint: 'light, dark or follow the system', go: { view: 'settings' } },
   );
   for (const m of s.sent.slice(0, 300)) out.push({ kind: 'Sent', label: subject(m.subject), hint: `To ${m.to ?? ''}`, go: { open: m.id, view: 'sent' } });

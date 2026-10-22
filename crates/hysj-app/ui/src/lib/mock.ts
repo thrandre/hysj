@@ -17,6 +17,29 @@ export async function mock(name: string, args: Record<string, unknown>): Promise
   const s = await load();
   const answers: Record<string, () => unknown> = {
     account_list: () => s.accounts,
+    // The preview's stand-in for the daemon's provider.rs.
+    account_discover: () => {
+      const d = String(args.address).split('@')[1]?.toLowerCase() ?? '';
+      const name = d.split('.')[0];
+      const ms = ['hotmail', 'outlook', 'live', 'msn'].includes(name);
+      const gmail = d === 'gmail.com';
+      return {
+        id: ms ? 'microsoft' : gmail ? 'gmail' : 'generic',
+        name: ms ? 'Outlook.com' : gmail ? 'Gmail' : d,
+        known: ms || gmail,
+        auth: ms ? 'oauth' : gmail ? 'command_line' : 'password',
+        imap_host: ms ? 'outlook.office365.com' : gmail ? 'imap.gmail.com' : `imap.${d}`,
+        imap_port: 993,
+        smtp_host: ms ? 'smtp-mail.outlook.com' : gmail ? 'smtp.gmail.com' : `smtp.${d}`,
+        smtp_port: ms ? 587 : 465,
+        help_url: null,
+        help_label: gmail ? 'Hysj doesn’t add Gmail accounts from the app. Google only lets mail apps in with an app password, which takes some setup and may stop working.' : null,
+        help_steps: gmail
+          ? ['Turn on 2-Step Verification for your Google account, then create an app password at myaccount.google.com/apppasswords.', 'In Terminal, in Hysj’s source code, run: cargo run -p hysj-cli -- account add you@gmail.com — and paste the app password when asked.']
+          : [],
+        sign_in_with: ms ? 'Microsoft' : null,
+      };
+    },
     account_label: () => {
       const a = s.accounts.find((x) => x.name === args.name);
       if (a) a.label = (args.label as string | null)?.trim() || null;

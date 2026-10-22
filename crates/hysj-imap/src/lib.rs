@@ -40,24 +40,6 @@ pub struct ImapBackend {
 /// ponytail: most recent N; older history when idle, with the scheduler (step 8).
 const SENT_HISTORY: usize = 5000;
 
-/// SMTP host for an address, by the same convention as [`guess_host`].
-pub fn guess_smtp_host(address: &str) -> String {
-    guess_host(address).replacen("imap.", "smtp.", 1)
-}
-
-/// IMAP host for an address. ponytail: covers Gmail and the `imap.<domain>`
-/// convention; ISPDB / RFC 6186 / MX autodiscovery arrives with the Accounts screen.
-pub fn guess_host(address: &str) -> String {
-    match address
-        .rsplit_once('@')
-        .map(|(_, d)| d.to_ascii_lowercase())
-    {
-        Some(d) if d == "gmail.com" || d == "googlemail.com" => "imap.gmail.com".into(),
-        Some(d) => format!("imap.{d}"),
-        None => String::new(),
-    }
-}
-
 /// Sync position:
 /// `<uidvalidity>:<floor>:<last uid>:<modseq>:<sent uidvalidity>:<sent last uid>:<mailbox>`.
 /// `floor` is the lowest UID we ever synced (the initial window); the mailbox
@@ -608,9 +590,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hosts_cursors_ids() {
-        assert_eq!(guess_host("kai@Gmail.com"), "imap.gmail.com");
-        assert_eq!(guess_host("kari@example.no"), "imap.example.no");
+    fn cursors_ids() {
         let c = Cursor {
             validity: 7,
             floor: 100,

@@ -1,11 +1,12 @@
 <script lang="ts">
   // Adding an account, or changing an existing one's servers (Settings and
-  // the first-run Welcome). Servers are guessed from the address unless typed
-  // in; Gmail's are known, so they're behind "Edit settings by hand".
-  // ponytail: guessed as imap./smtp.<domain>; ISPDB/SRV autodiscovery later.
+  // the first-run Welcome). The daemon says who an address belongs to — its
+  // servers and how it signs in (provider.rs) — and the form follows: a
+  // password, an app password with the provider's steps, "Sign in with …",
+  // or (Gmail) how to add it from the command line.
   import { act } from '../lib/app.svelte.ts';
   import { api } from '../lib/api.ts';
-  import type { Account } from '../lib/gen/index';
+  import type { Account, ProviderInfo } from '../lib/gen/index';
 
   let {
     edit = null,
@@ -30,6 +31,8 @@
   let smtpHost = $state('');
   let smtpPort = $state(465);
   let username = $state('');
+  /** The daemon's answer, and the domain it's about (never shown for another). */
+  let answer = $state<{ domain: string; info: ProviderInfo } | null>(null);
 
   // Editing fills the form with the account's current servers.
   $effect(() => {
@@ -46,21 +49,41 @@
     const d = at > 0 ? email.trim().slice(at + 1).toLowerCase() : '';
     return d.includes('.') && !d.endsWith('.') ? d : '';
   });
-  let gmail = $derived(domain === 'gmail.com' || domain === 'googlemail.com');
-  // Outlook.com and Hotmail take no passwords from mail apps: Microsoft sign-in
-  // (the daemon's oauth.rs decides the same way).
-  let microsoft = $derived(['hotmail', 'outlook', 'live', 'msn', 'windowslive'].includes(domain.split('.')[0]));
-  let servers = $derived(manual || !gmail);
+
+  let info = $derived(answer && answer.domain === domain ? answer.info : null);
+
+  // Ask the daemon about the address once typing pauses.
+  $effect(() => {
+    const address = email.trim();
+    const d = domain;
+    if (!d) return;
+    const t = setTimeout(() => {
+      api.accountDiscover(address).then(
+        (i) => {
+          answer = { domain: d, info: i };
+          // The provider's ports, unless editing an account's own.
+          if (!edit) [imapPort, smtpPort] = [i.imap_port, i.smtp_port];
+        },
+        () => (answer = null),
+      );
+    }, 200);
+    return () => clearTimeout(t);
+  });
+
+  /** Server fields: always for an unknown domain, on request for a known one. */
+  let servers = $derived(manual || (info !== null && !info.known));
+  let appPassword = $derived(info?.auth === 'app_password' || (edit !== null && info?.auth === 'command_line'));
 
   function reset() {
     manual = false;
+    answer = null;
     [email, password, imapHost, imapPort, smtpHost, smtpPort, username] = ['', '', '', 993, '', 465, ''];
   }
 
-  async function signInMicrosoft() {
+  async function signIn() {
     adding = true;
     const address = email.trim();
-    const ok = await act('Waiting for you to sign in to Microsoft in your browser…', () => api.accountMicrosoft(address));
+    const ok = await act(`Waiting for you to sign in to ${info?.sign_in_with ?? 'your provider'} in your browser…`, () => api.accountOAuth(address));
     adding = false;
     if (ok) {
       reset();
@@ -81,8 +104,8 @@
         username: servers && username.trim() ? username.trim() : null,
         smtp_host: servers && smtpHost.trim() ? smtpHost.trim() : null,
         smtp_port: servers ? smtpPort : null,
-        // Gmail shows app passwords in groups of four.
-        password: gmail ? password.replace(/\s+/g, '') : password,
+        // App passwords are shown in groups ("abcd efgh …"); never spaces in them.
+        password: appPassword ? password.replace(/\s+/g, '') : password,
       }),
     );
     adding = false;
@@ -98,51 +121,60 @@
   <h2 id="h-add">{edit ? `Change servers for ${edit.label ?? edit.name}` : title}</h2>
   <label for="addr">Email address</label>
   <input id="addr" type="email" placeholder="name@example.com" bind:value={email} autocomplete="email" disabled={edit !== null} />
-  {#if !edit}<span class="fine">Type the servers below, or leave them empty and Hysj guesses from the address.</span>{/if}
-  {#if domain && microsoft}
-    <p>
-      Outlook.com and Hotmail don’t take passwords from mail apps any more. Sign in with Microsoft in your browser instead — Hysj never sees your password,
-      and you can remove its access any time in your Microsoft account.
-    </p>
-    <div class="row">
-      <button class="btn primary" disabled={adding} onclick={signInMicrosoft}>{adding ? 'Waiting for Microsoft…' : edit ? 'Sign in again' : 'Sign in with Microsoft'}</button>
-      {#if edit}<button class="btn ghost" onclick={() => (reset(), oncancel())}>Cancel</button>{/if}
-    </div>
-  {:else if domain}
-    {#if gmail}
-      <p>Gmail connects with an <strong>app password</strong> — a separate password just for Hysj that you can revoke any time.</p>
-      <ol>
-        <li>Turn on 2-Step Verification for your Google account.</li>
-        <li>Open <button class="inline-link" onclick={() => api.openLink('https://myaccount.google.com/apppasswords')}>App passwords</button>, name it “Hysj” and press Create.</li>
-        <li>Paste the 16-character password below.</li>
-      </ol>
-    {/if}
-    {#if servers}
-      <div class="grid">
-        <label for="imap-host">IMAP server</label>
-        <input id="imap-host" class="mono" placeholder="imap.{domain}" bind:value={imapHost} autocomplete="off" spellcheck="false" />
-        <label for="imap-port">Port</label>
-        <input id="imap-port" class="mono port" type="number" min="1" max="65535" bind:value={imapPort} />
-        <label for="smtp-host">SMTP server</label>
-        <input id="smtp-host" class="mono" placeholder="smtp.{domain}" bind:value={smtpHost} autocomplete="off" spellcheck="false" />
-        <label for="smtp-port">Port</label>
-        <input id="smtp-port" class="mono port" type="number" min="1" max="65535" bind:value={smtpPort} />
+  {#if domain && info}
+    {#if info.auth === 'oauth'}
+      <p>
+        {info.name} doesn’t take passwords from mail apps. Sign in with {info.sign_in_with} in your browser instead — Hysj never sees your password, and you can
+        remove its access any time in your {info.sign_in_with} account.
+      </p>
+      <div class="row">
+        <button class="btn primary" disabled={adding} onclick={signIn}>
+          {adding ? `Waiting for ${info.sign_in_with}…` : edit ? 'Sign in again' : `Sign in with ${info.sign_in_with}`}
+        </button>
+        {#if edit}<button class="btn ghost" onclick={() => (reset(), oncancel())}>Cancel</button>{/if}
       </div>
-      <span class="fine">IMAP uses TLS (usually 993). SMTP 465 uses TLS from the start; 587 upgrades with STARTTLS.</span>
-      <label for="user">Username</label>
-      <input id="user" placeholder={email.trim()} bind:value={username} autocomplete="off" spellcheck="false" />
-    {/if}
-    <label for="pw">{gmail ? 'App password' : 'Password'}</label>
-    <input id="pw" type="password" class:mono={gmail} placeholder={gmail ? 'xxxx xxxx xxxx xxxx' : ''} bind:value={password} />
-    <span class="fine">Kept in your system keychain. Hysj checks it logs in before saving anything.</span>
-    <div class="row">
-      <button class="btn primary" disabled={adding || !password.trim()} onclick={connect}>{adding ? 'Connecting…' : edit ? 'Save' : 'Connect'}</button>
-      {#if edit}
-        <button class="btn ghost" onclick={() => (reset(), oncancel())}>Cancel</button>
-      {:else if gmail}
-        <button class="btn ghost" onclick={() => (manual = !manual)}>{manual ? 'Use Gmail’s settings' : 'Edit settings by hand'}</button>
+    {:else if info.auth === 'command_line' && !edit}
+      <p>{info.help_label}</p>
+      <ol>
+        {#each info.help_steps as step (step)}<li>{step}</li>{/each}
+      </ol>
+      <span class="fine">Hysj’s source code and how to build it: github.com/thrandre/hysj.</span>
+    {:else}
+      {#if !info.known}<span class="fine">Hysj guessed the servers for {info.name}; change them if your provider uses others.</span>{/if}
+      {#if appPassword && info.help_url}
+        <p>{info.name} connects with an <strong>app password</strong> — a separate password just for Hysj that you can revoke any time.</p>
+        <ol>
+          {#each info.help_steps as step (step)}<li>{step}</li>{/each}
+        </ol>
+        <button class="inline-link" onclick={() => api.openLink(info!.help_url!)}>Open {info.help_label}</button>
       {/if}
-    </div>
+      {#if servers}
+        <div class="grid">
+          <label for="imap-host">IMAP server</label>
+          <input id="imap-host" class="mono" placeholder={info.imap_host} bind:value={imapHost} autocomplete="off" spellcheck="false" />
+          <label for="imap-port">Port</label>
+          <input id="imap-port" class="mono port" type="number" min="1" max="65535" bind:value={imapPort} />
+          <label for="smtp-host">SMTP server</label>
+          <input id="smtp-host" class="mono" placeholder={info.smtp_host} bind:value={smtpHost} autocomplete="off" spellcheck="false" />
+          <label for="smtp-port">Port</label>
+          <input id="smtp-port" class="mono port" type="number" min="1" max="65535" bind:value={smtpPort} />
+        </div>
+        <span class="fine">IMAP uses TLS (usually 993). SMTP 465 uses TLS from the start; 587 upgrades with STARTTLS.</span>
+        <label for="user">Username</label>
+        <input id="user" placeholder={email.trim()} bind:value={username} autocomplete="off" spellcheck="false" />
+      {/if}
+      <label for="pw">{appPassword ? 'App password' : 'Password'}</label>
+      <input id="pw" type="password" class:mono={appPassword} bind:value={password} />
+      <span class="fine">Kept in your system keychain. Hysj checks it logs in before saving anything.</span>
+      <div class="row">
+        <button class="btn primary" disabled={adding || !password.trim()} onclick={connect}>{adding ? 'Connecting…' : edit ? 'Save' : 'Connect'}</button>
+        {#if edit}
+          <button class="btn ghost" onclick={() => (reset(), oncancel())}>Cancel</button>
+        {:else if info.known}
+          <button class="btn ghost" onclick={() => (manual = !manual)}>{manual ? `Use ${info.name}’s settings` : 'Edit settings by hand'}</button>
+        {/if}
+      </div>
+    {/if}
   {/if}
 </section>
 

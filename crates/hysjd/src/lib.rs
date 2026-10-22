@@ -6,6 +6,7 @@
 
 pub mod ai;
 pub mod oauth;
+pub mod provider;
 pub mod schedule;
 pub mod socket;
 
@@ -195,18 +196,23 @@ impl Daemon {
             .ok_or_else(|| RpcError::new(RpcError::NOT_FOUND, format!("no account named {name}")))
     }
 
-    /// A fresh access token for a Microsoft account, renewed if it's stale.
-    /// Microsoft sends a new refresh token each time; it's kept in memory at
-    /// once and written to the keychain off the lock.
-    async fn access_token(&mut self, address: &str, refresh: &str) -> Result<String, RpcError> {
+    /// A fresh access token for an OAuth account, renewed if it's stale.
+    /// Providers (Microsoft) may send a new refresh token each time; it's kept
+    /// in memory at once and written to the keychain off the lock.
+    async fn access_token(
+        &mut self,
+        address: &str,
+        cfg: &'static oauth::OAuthConfig,
+        refresh: &str,
+    ) -> Result<String, RpcError> {
         if let Some(t) = self.tokens.get(address).filter(|t| t.fresh()) {
             return Ok(t.access.clone());
         }
-        let t = oauth::refresh(refresh)
+        let t = oauth::refresh(cfg, refresh)
             .await
-            .map_err(|e| backend_err(format!("Microsoft sign-in: {e}")))?;
+            .map_err(|e| backend_err(format!("{} sign-in: {e}", cfg.name)))?;
         if let Some(new) = t.refresh.clone().filter(|n| n != refresh) {
-            let secret = format!("{}{new}", oauth::MS_PREFIX);
+            let secret = oauth::secret(cfg, &new);
             self.passwords.insert(address.to_string(), secret.clone());
             let a = address.to_string();
             tokio::task::spawn_blocking(move || {
@@ -223,13 +229,13 @@ impl Daemon {
     }
 
     async fn session(&mut self, account: &Account) -> Result<&mut ImapBackend, RpcError> {
-        // A Microsoft session logged in with a token that's about to expire
+        // An OAuth session logged in with a token that's about to expire
         // reconnects (its SMTP login carries the token too).
-        let microsoft = self
+        let oauth = self
             .passwords
             .get(&account.address)
-            .is_some_and(|p| p.starts_with(oauth::MS_PREFIX));
-        if microsoft && !self.tokens.get(&account.address).is_some_and(|t| t.fresh()) {
+            .is_some_and(|p| oauth::parse_secret(p).is_some());
+        if oauth && !self.tokens.get(&account.address).is_some_and(|t| t.fresh()) {
             self.sessions.remove(&account.name);
         }
         if !self.sessions.contains_key(&account.name) {
@@ -245,9 +251,9 @@ impl Daemon {
                             .to_string(),
                     )
                 })?;
-            let backend = match password.strip_prefix(oauth::MS_PREFIX) {
-                Some(refresh) => {
-                    let token = self.access_token(&account.address, refresh).await?;
+            let backend = match oauth::parse_secret(&password) {
+                Some((cfg, refresh)) => {
+                    let token = self.access_token(&account.address, cfg, refresh).await?;
                     ImapBackend::connect(account, Login::Bearer(&token)).await
                 }
                 None => ImapBackend::connect(account, Login::Password(&password)).await,
@@ -277,14 +283,14 @@ impl Daemon {
                 format!("account {} is {}", p.name, old.address),
             ));
         }
+        // Servers the person didn't type come from the provider registry.
+        let known = provider::discover(&p.address);
         let account = Account {
-            host: p.host.unwrap_or_else(|| hysj_imap::guess_host(&p.address)),
-            port: p.port.unwrap_or(993),
+            host: p.host.unwrap_or(known.imap_host),
+            port: p.port.unwrap_or(known.imap_port),
             username: p.username.unwrap_or_else(|| p.address.clone()),
-            smtp_host: p
-                .smtp_host
-                .unwrap_or_else(|| hysj_imap::guess_smtp_host(&p.address)),
-            smtp_port: p.smtp_port.unwrap_or(465),
+            smtp_host: p.smtp_host.unwrap_or(known.smtp_host),
+            smtp_port: p.smtp_port.unwrap_or(known.smtp_port),
             // Kept as it is when an existing account's servers change.
             label: None,
             name: p.name,
@@ -305,17 +311,19 @@ impl Daemon {
         Ok(account)
     }
 
-    /// Adds (or signs in again) a Microsoft account after "Sign in with
-    /// Microsoft": logs in with the token first, keeps nothing that doesn't work.
-    async fn add_microsoft(
+    /// Adds (or signs in again) an account after "Sign in with …": logs in
+    /// with the token first, keeps nothing that doesn't work.
+    async fn add_oauth(
         &mut self,
         address: &str,
+        cfg: &'static oauth::OAuthConfig,
         t: oauth::Tokens,
     ) -> Result<Account, RpcError> {
         let refresh = t
             .refresh
             .clone()
-            .ok_or_else(|| backend_err("Microsoft sent no refresh token".to_string()))?;
+            .ok_or_else(|| backend_err(format!("{} sent no refresh token", cfg.name)))?;
+        let known = provider::discover(address);
         let existing = self
             .store
             .accounts()
@@ -327,17 +335,17 @@ impl Daemon {
                 .as_ref()
                 .map_or_else(|| address.to_string(), |a| a.name.clone()),
             address: address.to_string(),
-            host: oauth::IMAP_HOST.into(),
-            port: 993,
+            host: known.imap_host,
+            port: known.imap_port,
             username: address.to_string(),
-            smtp_host: oauth::SMTP_HOST.into(),
-            smtp_port: 587,
+            smtp_host: known.smtp_host,
+            smtp_port: known.smtp_port,
             label: None,
         };
         let backend = ImapBackend::connect(&account, Login::Bearer(&t.access))
             .await
             .map_err(backend_err)?;
-        let secret = format!("{}{refresh}", oauth::MS_PREFIX);
+        let secret = oauth::secret(cfg, &refresh);
         keyring::Entry::new(KEYRING_SERVICE, &account.address)
             .and_then(|e| e.set_password(&secret))
             .map_err(|e| backend_err(format!("keychain: {e}")))?;
@@ -345,7 +353,7 @@ impl Daemon {
         self.passwords.insert(account.address.clone(), secret);
         self.tokens.insert(account.address.clone(), t);
         self.sessions.insert(account.name.clone(), backend);
-        tracing::info!(account = %account.name, "Microsoft account added");
+        tracing::info!(account = %account.name, "OAuth account added");
         Ok(account)
     }
 
@@ -952,20 +960,21 @@ async fn handle(raw: &str, hub: &Hub, conn: &mut Conn) -> Response {
     }
 }
 
-/// "Sign in with Microsoft": start hands out the page to open; finish waits
-/// for the browser to come back, then adds the account under the lock.
+/// "Sign in with …" (the address's provider): start hands out the page to
+/// open; finish waits for the browser to come back, then adds the account
+/// under the lock.
 async fn oauth_step(req: Request, hub: &Hub) -> Result<Value, RpcError> {
     let p: hysj_proto::AccountOAuth = params(req.params)?;
     let address = p.address.trim().to_lowercase();
-    if !oauth::is_microsoft(&address) {
-        return Err(RpcError::new(
+    let cfg = provider::oauth_for(&address).ok_or_else(|| {
+        RpcError::new(
             RpcError::INVALID_PARAMS,
-            "not a Microsoft address",
-        ));
-    }
-    let fail = |e: oauth::OAuthError| backend_err(format!("Microsoft sign-in: {e}"));
+            "this address signs in with a password",
+        )
+    })?;
+    let fail = |e: oauth::OAuthError| backend_err(format!("{} sign-in: {e}", cfg.name));
     if req.method == method::ACCOUNT_OAUTH_START {
-        let pending = oauth::start(&address).await.map_err(fail)?;
+        let pending = oauth::start(cfg, &address).await.map_err(fail)?;
         let url = pending.url.clone();
         hub.oauth.lock().await.insert(address, pending);
         return to_value(hysj_proto::OAuthStarted { url });
@@ -981,7 +990,7 @@ async fn oauth_step(req: Request, hub: &Hub) -> Result<Value, RpcError> {
         .daemon
         .lock()
         .await
-        .add_microsoft(&address, tokens)
+        .add_oauth(&address, cfg, tokens)
         .await?;
     hub.changed();
     to_value(account)
@@ -1055,6 +1064,10 @@ async fn dispatch(req: Request, daemon: &mut Daemon, conn: &mut Conn) -> Result<
         }
         method::ACCOUNT_ADD => to_value(daemon.add_account(params(req.params)?).await?),
         method::ACCOUNT_LIST => to_value(daemon.store.accounts().map_err(backend_err)?),
+        method::ACCOUNT_DISCOVER => {
+            let p: hysj_proto::AccountOAuth = params(req.params)?;
+            to_value(provider::discover(&p.address))
+        }
         method::ACCOUNT_LABEL => {
             let p: hysj_proto::AccountLabel = params(req.params)?;
             let label = p.label.as_deref().map(str::trim).filter(|l| !l.is_empty());

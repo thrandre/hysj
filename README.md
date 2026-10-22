@@ -34,10 +34,15 @@ cargo run --release
 
 The first run asks you to add your mail:
 
-- **Gmail:** turn on 2-Step Verification, then create an
-  [app password](https://myaccount.google.com/apppasswords) for Hysj.
+- **Outlook.com / Hotmail:** Sign in with Microsoft (in your browser).
+- **iCloud, Yahoo, Fastmail:** an app password; Hysj shows where to make it.
 - **Other providers:** your normal password; Hysj guesses the IMAP/SMTP
   servers from the address, or you type them in.
+- **Gmail** isn't added from the app (Google only lets mail apps in with an
+  app password, which takes setup and may stop working). With the command
+  line: turn on 2-Step Verification, create an
+  [app password](https://myaccount.google.com/apppasswords), then
+  `cargo run -p hysj-cli -- account add you@gmail.com` and paste it when asked.
 
 Passwords go in the macOS keychain. macOS asks whether Hysj may read it after
 every new build — choose **Always Allow**.

@@ -21,6 +21,7 @@ import type {
   MessageSummary,
   MessageView,
   OrderItem,
+  ProviderInfo,
   ScreenerDecided,
   SendParams,
   SendResult,
@@ -61,8 +62,10 @@ export const api = {
   sync: () => call<SyncResult[]>('sync'),
   accountAdd: (params: AccountAddParams) => call<Account>('account_add', { params }),
   accountLabel: (name: string, label: string | null) => call<null>('account_label', { name, label }),
-  /** Opens Microsoft's sign-in in the browser and resolves once it's done. */
-  accountMicrosoft: (address: string) => call<Account>('account_microsoft', { address }),
+  /** Who an address belongs to: its servers and how it signs in. */
+  accountDiscover: (address: string) => call<ProviderInfo>('account_discover', { address }),
+  /** Opens the provider's sign-in in the browser and resolves once it's done. */
+  accountOAuth: (address: string) => call<Account>('account_oauth', { address }),
   openLink: (url: string) => call<null>('open_link', { url }),
   search: (query: string) => call<Found[]>('search', { query }),
   digestEdition: (pick: number) => call<Edition>('digest_edition', { pick }),

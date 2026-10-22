@@ -13,37 +13,39 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-/// Hysj's app registration with Microsoft (Entra ID, "personal Microsoft
-/// accounts", public client). Not a secret: every copy of the app carries it.
-/// `HYSJ_MS_CLIENT_ID` at build time overrides it (a fork's own registration).
-pub const MS_CLIENT_ID: &str = match option_env!("HYSJ_MS_CLIENT_ID") {
-    Some(id) => id,
-    None => "e0bb8300-4325-43b9-803e-c6a894c4f02f",
-};
-const AUTHORIZE: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
-const TOKEN: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
-const SCOPES: &str = "https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send offline_access";
-/// How the refresh token is marked in the keychain (else it's a password).
-pub const MS_PREFIX: &str = "oauth:ms:";
+/// One provider's OAuth 2.0 setup: where to sign in, what to ask for, and
+/// Hysj's registration there (a public client: the id is not a secret).
+#[derive(Debug)]
+pub struct OAuthConfig {
+    /// In the keychain entry: `oauth:<key>:<refresh token>`.
+    pub key: &'static str,
+    /// "Sign in with Microsoft".
+    pub name: &'static str,
+    pub authorize: &'static str,
+    pub token: &'static str,
+    pub scopes: &'static str,
+    pub client_id: &'static str,
+}
 
-pub const IMAP_HOST: &str = "outlook.office365.com";
-pub const SMTP_HOST: &str = "smtp-mail.outlook.com";
+/// Every OAuth provider Hysj knows (see `provider.rs` for who uses which).
+pub const CONFIGS: &[&OAuthConfig] = &[&crate::provider::MICROSOFT_OAUTH];
 
-/// Personal Microsoft mail domains (work and school accounts sign in through
-/// their organisation, which may need its admin's approval: later).
-pub fn is_microsoft(address: &str) -> bool {
-    let domain = address
-        .rsplit('@')
-        .next()
-        .unwrap_or_default()
-        .to_lowercase();
-    let name = domain.split('.').next().unwrap_or_default();
-    matches!(name, "hotmail" | "outlook" | "live" | "msn" | "windowslive")
+/// The keychain entry for a refresh token.
+pub fn secret(cfg: &OAuthConfig, refresh: &str) -> String {
+    format!("oauth:{}:{refresh}", cfg.key)
+}
+
+/// A keychain entry that holds an OAuth refresh token: its provider and the
+/// token. `None` for a password.
+pub fn parse_secret(secret: &str) -> Option<(&'static OAuthConfig, &str)> {
+    let rest = secret.strip_prefix("oauth:")?;
+    let (key, token) = rest.split_once(':')?;
+    CONFIGS.iter().find(|c| c.key == key).map(|c| (*c, token))
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum OAuthError {
-    #[error("Hysj isn't registered with Microsoft yet (no client id in this build)")]
+    #[error("Hysj isn't registered with this provider yet (no client id in this build)")]
     NotRegistered,
     #[error("sign-in wasn't finished in the browser")]
     Abandoned,
@@ -57,6 +59,7 @@ pub enum OAuthError {
 
 /// A sign-in in progress: the page to open, and the listener it returns to.
 pub struct Pending {
+    pub cfg: &'static OAuthConfig,
     pub url: String,
     listener: TcpListener,
     redirect: String,
@@ -71,8 +74,8 @@ fn random(bytes: usize) -> String {
 }
 
 /// Starts a sign-in for `address`: open `url` in the browser, then [`finish`].
-pub async fn start(address: &str) -> Result<Pending, OAuthError> {
-    if MS_CLIENT_ID.is_empty() {
+pub async fn start(cfg: &'static OAuthConfig, address: &str) -> Result<Pending, OAuthError> {
+    if cfg.client_id.is_empty() {
         return Err(OAuthError::NotRegistered);
     }
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
@@ -81,12 +84,12 @@ pub async fn start(address: &str) -> Result<Pending, OAuthError> {
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let state = random(16);
     let url = reqwest::Url::parse_with_params(
-        AUTHORIZE,
+        cfg.authorize,
         &[
-            ("client_id", MS_CLIENT_ID),
+            ("client_id", cfg.client_id),
             ("response_type", "code"),
             ("redirect_uri", &redirect),
-            ("scope", SCOPES),
+            ("scope", cfg.scopes),
             ("code_challenge", &challenge),
             ("code_challenge_method", "S256"),
             ("state", &state),
@@ -97,6 +100,7 @@ pub async fn start(address: &str) -> Result<Pending, OAuthError> {
     .expect("a valid URL")
     .to_string();
     Ok(Pending {
+        cfg,
         url,
         listener,
         redirect,
@@ -127,8 +131,12 @@ impl Tokens {
     }
 }
 
-async fn token(form: &[(&str, &str)]) -> Result<Tokens, OAuthError> {
-    let resp = reqwest::Client::new().post(TOKEN).form(form).send().await?;
+async fn token(cfg: &OAuthConfig, form: &[(&str, &str)]) -> Result<Tokens, OAuthError> {
+    let resp = reqwest::Client::new()
+        .post(cfg.token)
+        .form(form)
+        .send()
+        .await?;
     if !resp.status().is_success() {
         let body = resp.text().await.unwrap_or_default();
         #[derive(Deserialize)]
@@ -215,25 +223,31 @@ async fn wait_for_code(
 pub async fn finish(p: Pending) -> Result<Tokens, OAuthError> {
     let code = wait_for_code(&p.listener, &p.state, Duration::from_secs(600)).await?;
 
-    token(&[
-        ("client_id", MS_CLIENT_ID),
-        ("grant_type", "authorization_code"),
-        ("code", &code),
-        ("redirect_uri", &p.redirect),
-        ("code_verifier", &p.verifier),
-        ("scope", SCOPES),
-    ])
+    token(
+        p.cfg,
+        &[
+            ("client_id", p.cfg.client_id),
+            ("grant_type", "authorization_code"),
+            ("code", &code),
+            ("redirect_uri", &p.redirect),
+            ("code_verifier", &p.verifier),
+            ("scope", p.cfg.scopes),
+        ],
+    )
     .await
 }
 
 /// A new access token from a refresh token.
-pub async fn refresh(refresh_token: &str) -> Result<Tokens, OAuthError> {
-    token(&[
-        ("client_id", MS_CLIENT_ID),
-        ("grant_type", "refresh_token"),
-        ("refresh_token", refresh_token),
-        ("scope", SCOPES),
-    ])
+pub async fn refresh(cfg: &OAuthConfig, refresh_token: &str) -> Result<Tokens, OAuthError> {
+    token(
+        cfg,
+        &[
+            ("client_id", cfg.client_id),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token),
+            ("scope", cfg.scopes),
+        ],
+    )
     .await
 }
 
@@ -270,22 +284,19 @@ mod tests {
     }
 
     #[test]
-    fn microsoft_addresses() {
-        for a in [
-            "kari@hotmail.com",
-            "kari@outlook.com",
-            "Kari@Hotmail.NO",
-            "kari@live.no",
-            "kari@msn.com",
-        ] {
-            assert!(super::is_microsoft(a), "{a}");
-        }
-        for a in [
-            "kari@gmail.com",
-            "kari@hotmailer.example",
-            "kari@example.no",
-        ] {
-            assert!(!super::is_microsoft(a), "{a}");
-        }
+    fn keychain_entries() {
+        let cfg = &crate::provider::MICROSOFT_OAUTH;
+        let s = super::secret(cfg, "R:T");
+        assert_eq!(
+            s, "oauth:ms:R:T",
+            "entries from before the registry still read"
+        );
+        let (c, t) = super::parse_secret(&s).unwrap();
+        assert_eq!((c.key, t), ("ms", "R:T"));
+        assert!(super::parse_secret("hunter2").is_none(), "a password");
+        assert!(
+            super::parse_secret("oauth:nope:x").is_none(),
+            "an unknown provider"
+        );
     }
 }

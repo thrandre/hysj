@@ -34,6 +34,7 @@ export type { MessageSummary } from './MessageSummary';
 export type { MessageView } from './MessageView';
 export type { OAuthStarted } from './OAuthStarted';
 export type { OrderItem } from './OrderItem';
+export type { ProviderInfo } from './ProviderInfo';
 export type { Reason } from './Reason';
 export type { ScreenerDecide } from './ScreenerDecide';
 export type { ScreenerDecided } from './ScreenerDecided';

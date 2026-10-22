@@ -378,11 +378,21 @@ async fn attachment_save(b: State<'_, Bridge>, id: String, index: u32, open: boo
     Ok(path.display().to_string())
 }
 
-/// "Sign in with Microsoft" (Outlook.com, Hotmail): opens Microsoft's page in
-/// the browser and waits until the person has signed in, on a connection of
-/// its own so the rest of the app keeps working meanwhile.
+/// Who an address belongs to: how it signs in and its servers.
 #[tauri::command]
-async fn account_microsoft(address: String) -> Res<Account> {
+async fn account_discover(b: State<'_, Bridge>, address: String) -> Res<hysj_proto::ProviderInfo> {
+    b.call(
+        method::ACCOUNT_DISCOVER,
+        hysj_proto::AccountOAuth { address },
+    )
+    .await
+}
+
+/// "Sign in with …" (Outlook.com, Hotmail): opens the provider's page in the
+/// browser and waits until the person has signed in, on a connection of its
+/// own so the rest of the app keeps working meanwhile.
+#[tauri::command]
+async fn account_oauth(address: String) -> Res<Account> {
     let mut own = hysjd::socket::client(Some("app"))
         .await
         .map_err(|e| e.to_string())?;
@@ -463,7 +473,8 @@ fn main() {
             update_auto,
             update_restart,
             account_label,
-            account_microsoft,
+            account_oauth,
+            account_discover,
             signal_hold,
             booking_list,
             order_list,
