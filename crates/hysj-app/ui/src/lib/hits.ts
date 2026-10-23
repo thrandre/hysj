@@ -4,7 +4,7 @@
 
 import type { View } from './app.svelte.ts';
 import type { Snapshot } from './types.ts';
-import { age, firstName, hhmm, nextSlot, subject } from './words.ts';
+import { age, firstName, nextSlot, subject, when } from './words.ts';
 
 export type Go =
   | { open: string; view: View }
@@ -67,7 +67,7 @@ export function hits(s: Snapshot, now: number): Hit[] {
       go: { view: 'orders' },
     });
   }
-  out.push({ kind: 'Digest', label: 'Open the digest', hint: `next at ${hhmm(nextSlot(new Date(now * 1000)))}`, go: { view: 'digest' } });
+  out.push({ kind: 'Digest', label: 'Open the digest', hint: `next ${when(nextSlot(new Date(now * 1000)), new Date(now * 1000))}`, go: { view: 'digest' } });
   const senders = [...new Map(s.screener.map((m) => [m.from_addr.toLowerCase(), m.from])).values()];
   if (senders.length)
     out.push({ kind: 'Screener', label: `Review ${senders.length} new senders`, hint: senders.slice(0, 3).join(', '), go: { view: 'screener' } });

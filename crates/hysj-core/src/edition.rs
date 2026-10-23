@@ -11,6 +11,7 @@ use std::collections::HashSet;
 
 use hysj_proto::{Control, Edition, Ending, Item, MessageSummary, Reason, Section, Story};
 
+use crate::digest;
 use crate::store::StoredListing;
 use jiff::Zoned;
 
@@ -469,7 +470,7 @@ fn finn_story(
         let seen = listings.iter().filter(|l| l.first_seen <= s).count();
         let at = ctx
             .previous
-            .map(|p| p.strftime("%H:%M").to_string())
+            .map(|p| digest::when(p, ctx.now))
             .unwrap_or_default();
         match seen {
             0 if para.is_empty() => para.push(match listings.len() {
@@ -775,7 +776,7 @@ pub fn build(msgs: &[MessageSummary], ctx: &Context) -> Edition {
     let needs: usize = stories.iter().map(|(k, _)| k).sum();
     let stories: Vec<Story> = stories.into_iter().map(|(_, s)| s).collect();
 
-    let since = ctx.previous.map(|p| p.strftime("%H:%M").to_string());
+    let since = ctx.previous.map(|p| digest::when(p, ctx.now));
     let total = msgs.len();
     let headline = if total == 0 {
         match &since {
@@ -862,15 +863,10 @@ pub fn build(msgs: &[MessageSummary], ctx: &Context) -> Edition {
         ),
     };
     let text = if latest {
-        let when = if ctx.next.date() == ctx.now.date() {
-            "today".to_string()
-        } else {
-            "tomorrow".to_string()
-        };
         format!(
-            "That’s everything since {}. Next digest {when} at {}.",
+            "That’s everything since {}. Next digest {}.",
             since.clone().unwrap_or_default(),
-            ctx.next.strftime("%H:%M")
+            digest::when(ctx.next, ctx.now)
         )
     } else {
         "That’s everything in this digest.".into()
@@ -1095,9 +1091,9 @@ mod tests {
         );
         assert_eq!(
             e.lede,
-            "Ten emails came in since 08:00. Two newsletters are worth reading, Spond sent one update and two promotions went straight to the archive."
+            "Ten emails came in since 08:00 today. Two newsletters are worth reading, Spond sent one update and two promotions went straight to the archive."
         );
-        assert_eq!(e.meta, "Tuesday · 16:00 digest · since 08:00 · 1 min");
+        assert_eq!(e.meta, "Tuesday · 16:00 digest · since 08:00 today · 1 min");
         let kinds: Vec<&str> = e.stories.iter().map(|s| s.kind.as_str()).collect();
         assert_eq!(
             kinds,
@@ -1129,7 +1125,7 @@ mod tests {
         );
         assert_eq!(
             e.ending.text,
-            "That’s everything since 08:00. Next digest tomorrow at 08:00."
+            "That’s everything since 08:00 today. Next digest 08:00 tomorrow."
         );
         assert_eq!(e.ids.len(), 10);
     }

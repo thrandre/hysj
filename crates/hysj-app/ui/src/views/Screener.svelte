@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { act, app, visible } from '../lib/app.svelte.ts';
+  import { act, app, nextDigest, visible } from '../lib/app.svelte.ts';
   import { api } from '../lib/api.ts';
   import type { Decision, MessageSummary } from '../lib/types.ts';
   import { initials, reasonText, subject } from '../lib/words.ts';
@@ -16,11 +16,11 @@
   let headline = $derived(
     senders.length === 0 ? 'Everyone has a place now.' : senders.length === 1 ? 'One new sender is waiting at the door.' : `${senders.length} new senders are waiting at the door.`,
   );
-  const results: Record<string, string> = {
+  let results: Record<string, string> = $derived({
     people: 'Let in — their mail now lands on your Desk.',
-    digest: 'Sent to the Digest — you’ll see them at 08:00 and 16:00.',
+    digest: `Sent to the Digest — you’ll see them in the next one, ${nextDigest()}.`,
     blocked: 'Blocked — you won’t hear from them again.',
-  };
+  });
 
   async function decide(sender: string, m: MessageSummary, d: Decision) {
     const r = await act(null, () => api.screenerDecide(sender, d));

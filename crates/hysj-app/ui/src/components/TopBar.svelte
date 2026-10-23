@@ -1,10 +1,9 @@
 <script lang="ts">
-  import { accountLabel, app, digestSplit, go } from '../lib/app.svelte.ts';
+  import { accountLabel, app, digestNow, digestSplit, go, nextDigest } from '../lib/app.svelte.ts';
   import { earlier } from '../lib/digest.ts';
-  import { hhmm, nextSlot } from '../lib/words.ts';
   import UpdatePill from './UpdatePill.svelte';
 
-  let next = $derived(hhmm(nextSlot(new Date())));
+  let next = $derived(nextDigest());
   let held = $derived(app.data ? digestSplit()[1].length : 0);
 </script>
 
@@ -38,7 +37,7 @@
     {:else if app.view === 'digest'}
       <div class="segmented" role="group" aria-label="Digest editions">
         <button aria-pressed={app.digestPick === 0} onclick={() => (app.digestPick = 0)}>Latest</button>
-        {#each earlier(new Date()) as [pick, label] (pick)}
+        {#each earlier(digestNow()) as [pick, label] (pick)}
           <button aria-pressed={app.digestPick === pick} onclick={() => (app.digestPick = pick)}>{label}</button>
         {/each}
       </div>

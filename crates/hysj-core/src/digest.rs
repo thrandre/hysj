@@ -97,6 +97,25 @@ pub fn name(slot: &Zoned) -> &'static str {
     }
 }
 
+/// A time as the reader says it: "12:00 today", "19:00 yesterday",
+/// "08:00 tomorrow", else with the weekday or the date ("16:00 on Monday").
+pub fn when(t: &Zoned, now: &Zoned) -> String {
+    let day = t.date();
+    let today = now.date();
+    let words = if day == today {
+        "today".to_string()
+    } else if Some(day) == today.yesterday().ok() {
+        "yesterday".into()
+    } else if Some(day) == today.tomorrow().ok() {
+        "tomorrow".into()
+    } else if (day - today).get_days().abs() < 7 {
+        t.strftime("on %A").to_string()
+    } else {
+        t.strftime("on %-d %B").to_string()
+    };
+    format!("{} {words}", t.strftime("%H:%M"))
+}
+
 /// The latest delivery and the three before it, newest first.
 pub fn slots(now: &Zoned) -> [Zoned; 4] {
     let before = |z: &Zoned| {
@@ -130,6 +149,17 @@ mod tests {
 
     fn at(s: &str) -> Zoned {
         format!("{s}[Europe/Oslo]").parse().unwrap()
+    }
+
+    #[test]
+    fn when_says_the_day() {
+        let now = at("2026-10-21T14:05:00+02:00");
+        let w = |s: &str| when(&at(s), &now);
+        assert_eq!(w("2026-10-21T12:00:00+02:00"), "12:00 today");
+        assert_eq!(w("2026-10-20T19:00:00+02:00"), "19:00 yesterday");
+        assert_eq!(w("2026-10-22T12:00:00+02:00"), "12:00 tomorrow");
+        assert_eq!(w("2026-10-19T08:00:00+02:00"), "08:00 on Monday");
+        assert_eq!(w("2026-10-01T08:00:00+02:00"), "08:00 on 1 October");
     }
 
     #[test]

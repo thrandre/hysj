@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { app, go, type View } from '../lib/app.svelte.ts';
-  import { hhmm, nextSlot } from '../lib/words.ts';
+  import { app, go, nextDigest, type View } from '../lib/app.svelte.ts';
 
   let items = $derived.by(() => {
     const s = app.data!;
@@ -8,7 +7,7 @@
     const senders = new Set(s.screener.map((m) => m.from_addr.toLowerCase()));
     return [
       ['desk', 'People', String(s.people.filter((m) => m.intent === 'reply').length)],
-      ['digest', 'Digest', hhmm(nextSlot(new Date()))],
+      ['digest', 'Digest', nextDigest()],
       ['screener', 'Screener', String(senders.size)],
       ['codes', 'Codes', String(s.codes.filter((c) => c.expires > now).length)],
       ['bookings', 'Bookings', String(s.bookings.filter((b) => b.start_ts === null || b.start_ts >= now - 12 * 3600).length)],

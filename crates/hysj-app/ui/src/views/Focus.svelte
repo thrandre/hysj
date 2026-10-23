@@ -2,9 +2,9 @@
   // One at a time (Focus mockup): Reply (R), Done (E), Later (H), Skip (→).
   // ponytail: Later moves the message to the end of this session's queue; a
   // real snooze (back on the Desk at a chosen time) needs a store column.
-  import { act, app, go, startFocus } from '../lib/app.svelte.ts';
+  import { act, app, go, nextDigest, startFocus } from '../lib/app.svelte.ts';
   import { api } from '../lib/api.ts';
-  import { age, hhmm, initials, nextSlot, reasonText, subject } from '../lib/words.ts';
+  import { age, initials, reasonText, subject } from '../lib/words.ts';
   import { accountSlot } from '../lib/app.svelte.ts';
   import ReplyBox from '../components/ReplyBox.svelte';
   import MailFrame from '../components/MailFrame.svelte';
@@ -88,7 +88,7 @@
   {:else}
     <div class="end">
       <h1>That’s everyone.</h1>
-      <p>Nothing else will reach you until the {hhmm(nextSlot(new Date()))} digest.</p>
+      <p>Nothing else will reach you until the next digest, {nextDigest()}.</p>
       <button class="btn raised" onclick={startFocus}>Start over</button>
       <button class="btn ghost" onclick={() => go('desk')}>Back to Desk</button>
     </div>

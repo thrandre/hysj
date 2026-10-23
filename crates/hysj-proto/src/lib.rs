@@ -711,7 +711,7 @@ pub struct EditionParams {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Edition {
     pub pick: u8,
-    /// "Wednesday · 16:00 digest · since 08:00 · 4 min".
+    /// "Wednesday · 16:00 digest · since 08:00 today · 4 min".
     pub meta: String,
     pub headline: String,
     pub lede: String,
@@ -875,7 +875,7 @@ pub struct Item {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Ending {
-    /// "That’s everything since 08:00. Next digest tomorrow at 08:00."
+    /// "That’s everything since 08:00 today. Next digest 08:00 tomorrow."
     pub text: String,
     /// "12 promotions from 9 shops went straight to the archive."
     pub note: String,

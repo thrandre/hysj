@@ -91,6 +91,24 @@ export function hhmm(d: Date): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+/** A time as the reader says it (as digest.rs `when`): "12:00 today",
+ * "19:00 yesterday", "08:00 tomorrow", else "16:00 on Monday" / "on 1 October". */
+export function when(d: Date, now: Date): string {
+  const day = (x: Date) => Date.UTC(x.getFullYear(), x.getMonth(), x.getDate()) / 86_400_000;
+  const diff = day(d) - day(now);
+  const words =
+    diff === 0
+      ? 'today'
+      : diff === -1
+        ? 'yesterday'
+        : diff === 1
+          ? 'tomorrow'
+          : Math.abs(diff) < 7
+            ? `on ${d.toLocaleDateString('en-GB', { weekday: 'long' })}`
+            : `on ${d.getDate()} ${d.toLocaleDateString('en-GB', { month: 'long' })}`;
+  return `${hhmm(d)} ${words}`;
+}
+
 export const weekday = (d: Date) => d.toLocaleDateString('en-GB', { weekday: 'long' });
 
 /** "---------- Forwarded message ---------", "Begin forwarded message:", translations. */

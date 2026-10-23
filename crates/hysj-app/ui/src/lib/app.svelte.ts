@@ -3,7 +3,8 @@
 import { api, onChanged, onUpdateReady, snapshot } from './api.ts';
 import type { MessageSummary, MessageView, Snapshot, UpdateStatus } from './types.ts';
 import type { Go } from './hits.ts';
-import { lastSlot, setDigestHours } from './words.ts';
+import { clock } from './clock.svelte.ts';
+import { lastSlot, nextSlot, setDigestHours, when } from './words.ts';
 
 export type View = 'desk' | 'focus' | 'digest' | 'screener' | 'codes' | 'bookings' | 'orders' | 'sent' | 'done' | 'settings' | 'search';
 
@@ -205,9 +206,22 @@ export function accountSlot(name: string): number {
   return Math.max(0, i) % 4;
 }
 
+/** Now, for digest times: follows the clock and the reader's hours (a
+ * reactive read of both, so labels change the moment either does). */
+export function digestNow(): Date {
+  void app.data?.digestHours;
+  return new Date(clock.now * 1000);
+}
+
+/** When the next digest comes: "16:00 today", "08:00 tomorrow". */
+export function nextDigest(): string {
+  const now = digestNow();
+  return when(nextSlot(now), now);
+}
+
 /** Digest mail split at the last delivery: [delivered, held for the next]. */
 export function digestSplit(): [MessageSummary[], MessageSummary[]] {
-  const last = lastSlot(new Date()).getTime() / 1000;
+  const last = lastSlot(digestNow()).getTime() / 1000;
   const all = visible(app.data?.digest ?? []);
   return [all.filter((m) => m.ts === null || m.ts <= last), all.filter((m) => m.ts !== null && m.ts > last)];
 }
