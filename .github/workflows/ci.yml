@@ -7,8 +7,11 @@ on:
 
 jobs:
   check:
-    # Apple Silicon: the on-device AI builds with Metal.
-    runs-on: macos-14
+    # Apple Silicon (the on-device AI builds with Metal); Xcode 26 for
+    # Apple's Foundation Models (hysj-apple-ai: no stub allowed here).
+    runs-on: macos-26
+    env:
+      HYSJ_REQUIRE_APPLE_AI: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

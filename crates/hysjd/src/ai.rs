@@ -37,7 +37,33 @@ pub fn memory_gb() -> u64 {
 }
 
 /// "light" on Macs with 8 GB or less, else "standard".
+/// Whether Apple's on-device model can be used, as last checked (the
+/// helper is asked at start and whenever Settings looks).
+static APPLE: std::sync::RwLock<Option<hysj_ai::apple::Availability>> =
+    std::sync::RwLock::new(None);
+
+/// Asks `hysj-apple-ai` again; returns the answer.
+pub async fn refresh_apple() -> hysj_ai::apple::Availability {
+    let a = hysj_ai::apple::availability().await;
+    *APPLE.write().expect("not poisoned") = Some(a.clone());
+    a
+}
+
+pub fn apple() -> hysj_ai::apple::Availability {
+    APPLE
+        .read()
+        .expect("not poisoned")
+        .clone()
+        .unwrap_or_default()
+}
+
+/// Apple's model where macOS has it (nothing to download, about as fast as
+/// Light, close to Standard on real mail); else "light" on Macs with 8 GB
+/// or less, else "standard".
 pub fn recommended_size() -> &'static str {
+    if apple().available {
+        return "apple";
+    }
     match memory_gb() {
         1..=8 => "light",
         _ => "standard",
@@ -45,11 +71,27 @@ pub fn recommended_size() -> &'static str {
 }
 
 /// The model the reader chose, else the one recommended for this Mac.
+/// Apple's, if chosen but no longer available (Apple Intelligence turned
+/// off), gives way to the one recommended.
 pub fn chosen(store: &hysj_core::Store) -> Choice {
     let size = store.ai_size().ok().flatten();
-    match size.as_deref().unwrap_or_else(|| recommended_size()) {
+    let size = match size.as_deref() {
+        Some("apple") if !apple().available => None,
+        s => s,
+    };
+    match size.unwrap_or_else(|| recommended_size()) {
+        "apple" => Choice::Apple,
         "light" => LIGHT,
         _ => STANDARD,
+    }
+}
+
+/// "standard", "light" or "apple" for a choice.
+pub fn size_of(choice: Choice) -> &'static str {
+    match choice {
+        Choice::Apple => "apple",
+        c if c == LIGHT => "light",
+        _ => "standard",
     }
 }
 /// Messages per pass, so the lock is released often.
@@ -103,7 +145,7 @@ pub async fn pass<W: Writer>(hub: &Hub, w: &W, model: &str) -> usize {
                     // offers (which then vanish into promotions): Standard only.
                     offer = i.offer && model == STANDARD.version();
                     if accept_issue(&i.gist, &j.subject) {
-                        Ok(i.gist)
+                        Ok(capitalized(&i.gist))
                     } else {
                         Err("rejected".to_string())
                     }
@@ -111,7 +153,7 @@ pub async fn pass<W: Writer>(hub: &Hub, w: &W, model: &str) -> usize {
                 Err(e) => Err(e.to_string()),
             },
             AiTask::Gist => match w.gist(&text).await {
-                Ok(g) if accept_gist(&g.gist, &j.subject) => Ok(g.gist),
+                Ok(g) if accept_gist(&g.gist, &j.subject) => Ok(capitalized(&g.gist)),
                 Ok(_) => Err("rejected".to_string()),
                 Err(e) => Err(e.to_string()),
             },
@@ -305,6 +347,15 @@ async fn has_work(hub: &Hub, model: &str) -> bool {
     jobs || senders || bookings || !d.digest_to_write(model).is_empty()
 }
 
+/// A sentence starts with a capital ("you must…" → "You must…").
+fn capitalized(s: &str) -> String {
+    let s = s.trim();
+    let mut c = s.chars();
+    c.next()
+        .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+        .unwrap_or_default()
+}
+
 /// The Mac is running on battery (`pmset`); false when it can't tell.
 /// ponytail: asks pmset every 30 s; IOKit power notifications if that matters.
 pub async fn on_battery_power() -> bool {
@@ -322,6 +373,7 @@ pub async fn run(hub: Arc<Hub>) {
     }
     let mut llm: Option<Llm> = None;
     let mut last_work = std::time::Instant::now();
+    refresh_apple().await;
     loop {
         if llm.is_some() && last_work.elapsed() > IDLE {
             tracing::info!("model idle; unloading");

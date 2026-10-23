@@ -54,7 +54,7 @@ export async function mock(name: string, args: Record<string, unknown>): Promise
     booking_list: () => s.bookings,
     order_list: () => s.orders,
     signal_list: () => s.signals ?? [],
-    ai_settings: () => ({ enabled: true, on_battery: false, waiting_for_power: false, model: 'gemma3-4b-q4k', size: 'standard', recommended: 'standard', ...(args.set as object | null) }),
+    ai_settings: () => ({ enabled: true, on_battery: false, waiting_for_power: false, model: 'gemma3-4b-q4k', size: 'apple', recommended: 'apple', apple_available: true, apple_reason: '', ...(args.set as object | null) }),
     app_version: () => '0.1.0',
     system_info: () => 'macOS 26.0 · Mac16,1 · Apple M4 · 24 GB',
     // ?update in the preview shows a downloaded update.

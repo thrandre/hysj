@@ -50,7 +50,10 @@
     "macOS": {
       "minimumSystemVersion": "13.0",
       "signingIdentity": "-"
-    }
+    },
+    "externalBin": [
+      "binaries/hysj-apple-ai"
+    ]
   },
   "plugins": {
     "updater": {

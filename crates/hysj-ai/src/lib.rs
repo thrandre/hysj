@@ -8,6 +8,8 @@
 
 use std::time::Instant;
 
+pub mod apple;
+
 use anyhow::{Context, Result};
 use mistralrs::{Constraint, Model, RequestBuilder, TextMessageRole};
 use serde::Deserialize;
@@ -22,6 +24,9 @@ pub enum Choice {
     Qwen3_4b,
     /// Gemma 3 4B, UQFF q4k (~4.4 GB with its base files).
     Gemma3_4b,
+    /// Apple's on-device model (Apple Intelligence, macOS 26+): nothing to
+    /// download, run by macOS; through the `hysj-apple-ai` helper.
+    Apple,
     /// Qwen3 1.7B, GGUF Q4_K_M (~1.1 GB): the light model for 8 GB Macs.
     /// (Gemma 3 1B was the other candidate; mistral.rs 0.8 can't load its GGUF.)
     Qwen3_1_7b,
@@ -33,6 +38,7 @@ impl Choice {
             "qwen3" | "qwen3-4b" => Some(Self::Qwen3_4b),
             "gemma3" | "gemma3-4b" => Some(Self::Gemma3_4b),
             "qwen3-1.7b" => Some(Self::Qwen3_1_7b),
+            "apple" => Some(Self::Apple),
             _ => None,
         }
     }
@@ -43,19 +49,37 @@ impl Choice {
             Self::Qwen3_4b => "qwen3-4b-q4km",
             Self::Gemma3_4b => "gemma3-4b-q4k",
             Self::Qwen3_1_7b => "qwen3-1.7b-q4km",
+            Self::Apple => "apple-foundation",
         }
     }
 }
 
+enum Engine {
+    Mistral(Model),
+    Apple(Box<apple::Helper>),
+}
+
 pub struct Llm {
-    model: Model,
+    engine: Engine,
     pub choice: Choice,
 }
 
 impl Llm {
     /// Loads (downloading on first use) the chosen model.
     pub async fn load(choice: Choice) -> Result<Self> {
+        if choice == Choice::Apple {
+            let helper = apple::Helper::spawn()?;
+            let a = helper.check().await?;
+            if !a.available {
+                anyhow::bail!("Apple's on-device model isn't available: {}", a.reason);
+            }
+            return Ok(Self {
+                engine: Engine::Apple(Box::new(helper)),
+                choice,
+            });
+        }
         let model = match choice {
+            Choice::Apple => unreachable!("handled above"),
             Choice::Qwen3_4b => {
                 mistralrs::GgufModelBuilder::new("Qwen/Qwen3-4B-GGUF", vec!["Qwen3-4B-Q4_K_M.gguf"])
                     .build()
@@ -80,7 +104,10 @@ impl Llm {
             }
         }
         .with_context(|| format!("loading {}", choice.version()))?;
-        Ok(Self { model, choice })
+        Ok(Self {
+            engine: Engine::Mistral(model),
+            choice,
+        })
     }
 
     /// One structured answer. Low temperature: we want faithful, not creative;
@@ -93,6 +120,17 @@ impl Llm {
         max_tokens: usize,
         temperature: f64,
     ) -> Result<T> {
+        let model = match &self.engine {
+            Engine::Mistral(m) => m,
+            Engine::Apple(h) => {
+                let text = h
+                    .ask(system, user, &schema, max_tokens, temperature)
+                    .await?;
+                return serde_json::from_str(&text).with_context(|| {
+                    format!("Apple's model answered non-JSON ({} chars)", text.len())
+                });
+            }
+        };
         let req = RequestBuilder::new()
             .set_constraint(Constraint::JsonSchema(schema))
             .set_sampler_max_len(max_tokens)
@@ -106,7 +144,7 @@ impl Llm {
             ]))
             .add_message(TextMessageRole::System, system)
             .add_message(TextMessageRole::User, user);
-        let resp = self.model.send_chat_request(req).await?;
+        let resp = model.send_chat_request(req).await?;
         let text = resp
             .choices
             .first()

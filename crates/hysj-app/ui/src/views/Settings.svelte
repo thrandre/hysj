@@ -44,9 +44,17 @@
   }
 
   const SIZES = [
+    { id: 'apple', name: 'Apple Intelligence', desc: 'Apple’s on-device model, run by macOS: fast, good summaries, nothing to download.', size: 'built in' },
     { id: 'standard', name: 'Standard', desc: 'Best summaries in English and Norwegian (Gemma 3 4B).', size: '4 GB' },
     { id: 'light', name: 'Light', desc: 'For Macs with 8 GB: about six times faster, plainer summaries (Qwen3 1.7B).', size: '1.1 GB' },
   ];
+  // Why Apple's model isn't offered, when the person can do something about it.
+  const appleHint = (reason: string) =>
+    /notEnabled/i.test(reason)
+      ? 'Turn on Apple Intelligence in System Settings to use Apple’s on-device model — nothing to download.'
+      : /notReady/i.test(reason)
+        ? 'macOS is still getting Apple’s on-device model ready; it shows up here when it is.'
+        : '';
 
   async function setAi(change: Partial<AiSettings>) {
     const s = await act(null, () => api.aiSettings({ ...ai!, ...change }));
@@ -113,7 +121,7 @@
     </p>
     {#if ai?.enabled}
       <div class="sizes" role="radiogroup" aria-label="Model size">
-        {#each SIZES as s (s.id)}
+        {#each SIZES.filter((s) => s.id !== 'apple' || ai?.apple_available) as s (s.id)}
           <button role="radio" aria-checked={ai.size === s.id} onclick={() => setAi({ size: s.id })}>
             <span class="radio" aria-hidden="true"></span>
             <span class="what">
@@ -124,9 +132,10 @@
           </button>
         {/each}
       </div>
+      {#if !ai.apple_available && appleHint(ai.apple_reason)}<p class="fine">{appleHint(ai.apple_reason)}</p>{/if}
     {/if}
     <div class="card facts">
-      <p>Downloaded once into Hysj’s data folder; switching downloads the other one.</p>
+      <p>Standard and Light are downloaded once into Hysj’s data folder; Apple’s model comes with macOS.</p>
       <p>Loaded when there is something to write, unloaded after 10 idle minutes.</p>
       <p>Codes, blocked senders and your own mail are never given to it.</p>
     </div>
@@ -174,7 +183,7 @@
       {#each [['Hysj app', ''], ['Background service', 'updates with the app'], ['Command line (hysj)', 'updates with the app']] as [label, note] (label)}
         <div class="version"><span>{label}</span><span class="fine">{note}</span><span class="mono">{version}</span></div>
       {/each}
-      <div class="version"><span>On-device AI</span><span class="fine">downloaded separately</span><span class="mono">{ai ? (ai.size === 'light' ? 'Qwen3 1.7B' : 'Gemma 3 4B') : ''}</span></div>
+      <div class="version"><span>On-device AI</span><span class="fine">downloaded separately</span><span class="mono">{ai ? ({ light: 'Qwen3 1.7B', apple: 'Apple Intelligence' }[ai.size] ?? 'Gemma 3 4B') : ''}</span></div>
     </div>
     <div class="row">
       <button class="btn" onclick={diagnostics}>{app.copied === 'diagnostics' ? 'Copied' : 'Copy diagnostics'}</button>

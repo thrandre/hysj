@@ -18,10 +18,19 @@ on_battery: boolean,
  */
 waiting_for_power: boolean, 
 /**
- * "standard" (best summaries) or "light" (for 8 GB Macs).
+ * "standard" (best summaries), "light" (for 8 GB Macs) or "apple".
  */
 size: string, 
 /**
- * What this Mac should use (by its memory); ignored when setting.
+ * What this Mac should use (Apple's model if it has it, else by its
+ * memory); ignored when setting.
  */
-recommended: string, };
+recommended: string, 
+/**
+ * Apple's on-device model can be used here (macOS 26+, Apple Intelligence on).
+ */
+apple_available: boolean, 
+/**
+ * Why not ("appleIntelligenceNotEnabled", "deviceNotEligible", "modelNotReady", …).
+ */
+apple_reason: string, };
