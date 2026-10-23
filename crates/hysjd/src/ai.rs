@@ -373,6 +373,7 @@ pub async fn run(hub: Arc<Hub>) {
     }
     let mut llm: Option<Llm> = None;
     let mut last_work = std::time::Instant::now();
+    let mut waiting_for_power = false;
     refresh_apple().await;
     loop {
         if llm.is_some() && last_work.elapsed() > IDLE {
@@ -395,7 +396,21 @@ pub async fn run(hub: Arc<Hub>) {
         if llm.as_ref().is_some_and(|l| l.choice != choice) {
             llm = None;
         }
-        if !enabled || (!on_battery && on_battery_power().await) {
+        // Every model, Apple's too, and every kind of summary waits here.
+        let paused = !on_battery && on_battery_power().await;
+        if paused != waiting_for_power {
+            waiting_for_power = paused;
+            tracing::info!(
+                paused,
+                "{}",
+                if paused {
+                    "on battery: summaries wait for the charger"
+                } else {
+                    "on power: summaries resume"
+                }
+            );
+        }
+        if !enabled || paused {
             llm = None;
             tokio::time::sleep(EVERY).await;
             continue;
