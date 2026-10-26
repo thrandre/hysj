@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Sent and Done: rows that open in place; Done can put a message back.
+  // Sent and the Archive (cleared mail, `done`): rows that open in place; Done can put a message back.
   import { act, app, toggle, visible } from '../lib/app.svelte.ts';
   import { api } from '../lib/api.ts';
   import { shortMonth } from '../lib/findit.ts';
@@ -17,9 +17,9 @@
       <p class="meta">Sent · newest first</p>
       <h1 class="h1">What you sent.</h1>
     {:else}
-      <p class="meta">Done</p>
-      <h1 class="h1">Cleared from the Desk and the Digest.</h1>
-      <p class="lede">Restore puts a message back where it was.</p>
+      <p class="meta">Archive · newest first</p>
+      <h1 class="h1">Everything you cleared.</h1>
+      <p class="lede">Mail you marked done or read, from the Desk and the Digest. Restore puts a message back where it was.</p>
     {/if}
   </header>
   {#if items.length}
@@ -37,7 +37,7 @@
       {/each}
     </div>
   {:else}
-    <p class="empty">{folder === 'sent' ? 'Nothing sent yet.' : 'Nothing cleared yet.'}</p>
+    <p class="empty">{folder === 'sent' ? 'Nothing sent yet.' : 'Nothing archived yet.'}</p>
   {/if}
 </div>
 

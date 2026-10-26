@@ -82,12 +82,12 @@ export function hits(s: Snapshot, now: number): Hit[] {
     { kind: 'Sync', label: 'Check for new mail', hint: 'all accounts', go: { sync: true } },
     { kind: 'Focus', label: 'One at a time', hint: 'R reply · E done · H later · → skip', go: { view: 'focus' } },
     { kind: 'Sent', label: 'Sent mail', hint: 'newest first', go: { view: 'sent' } },
-    { kind: 'Done', label: 'Done — cleared mail', hint: 'restore from here', go: { view: 'done' } },
+    { kind: 'Archive', label: 'Archive — cleared mail', hint: 'restore from here', go: { view: 'done' } },
     { kind: 'Settings', label: 'Add an account', hint: 'Outlook.com, iCloud or your own domain', go: { view: 'settings' } },
     { kind: 'Settings', label: 'Appearance', hint: 'light, dark or follow the system', go: { view: 'settings' } },
   );
   for (const m of s.sent.slice(0, 300)) out.push({ kind: 'Sent', label: subject(m.subject), hint: `To ${m.to ?? ''}`, go: { open: m.id, view: 'sent' } });
-  for (const m of s.done.slice(0, 300)) out.push({ kind: 'Done', label: subject(m.subject), hint: m.from, go: { open: m.id, view: 'done' } });
+  for (const m of s.done.slice(0, 300)) out.push({ kind: 'Archive', label: subject(m.subject), hint: m.from, go: { open: m.id, view: 'done' } });
   return out;
 }
 

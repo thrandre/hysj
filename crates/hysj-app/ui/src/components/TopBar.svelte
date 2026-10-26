@@ -55,6 +55,7 @@
     {:else if ['sent', 'done', 'settings', 'search'].includes(app.view)}
       <button class="link" onclick={() => go('desk')}>Back to Desk</button>
     {:else}
+      <button class="link" onclick={() => go('done')}>Archive</button>
       <button class="link" onclick={() => go('settings')}>Settings</button>
     {/if}
   </nav>
