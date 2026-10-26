@@ -27,6 +27,7 @@ export type { IdentitySuggest } from './IdentitySuggest';
 export type { IdentitySuggestion } from './IdentitySuggestion';
 export type { Intent } from './Intent';
 export type { Item } from './Item';
+export type { KindCorrect } from './KindCorrect';
 export type { ListParams } from './ListParams';
 export type { Message } from './Message';
 export type { MessageDone } from './MessageDone';

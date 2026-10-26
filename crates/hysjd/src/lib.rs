@@ -5,6 +5,7 @@
 //! socket ([`socket`]). Tests run it in-process via [`serve`].
 
 pub mod ai;
+pub mod kinds;
 pub mod oauth;
 pub mod provider;
 pub mod schedule;
@@ -921,6 +922,7 @@ const MUTATING: &[&str] = &[
     method::DIGEST_SET,
     method::DIGEST_HOURS,
     method::AI_SETTINGS,
+    method::KIND_CORRECT,
 ];
 
 async fn handle(raw: &str, hub: &Hub, conn: &mut Conn) -> Response {
@@ -1166,6 +1168,17 @@ async fn dispatch(req: Request, daemon: &mut Daemon, conn: &mut Conn) -> Result<
                 on_battery,
                 waiting_for_power: !on_battery && crate::ai::on_battery_power().await,
             })
+        }
+        method::KIND_CORRECT => {
+            let p: hysj_proto::KindCorrect = params(req.params)?;
+            if hysj_core::kinds::index(&p.kind).is_none() {
+                return Err(RpcError::new(RpcError::INVALID_PARAMS, "unknown kind"));
+            }
+            daemon
+                .store
+                .correct_kind(&p.record, &p.kind)
+                .map_err(backend_err)?;
+            to_value(())
         }
         method::DIGEST_HOURS => {
             if !req.params.is_null() {

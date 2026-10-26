@@ -3,6 +3,7 @@
 //   {"check": true}                      → {"available": true, "reason": "", "languages": ["en", "nb", …]}
 //   {"system", "user", "schema", "temperature", "max_tokens"}
 //                                         → {"ok": "<the answer as JSON>"} or {"error": "…"}
+//   {"embed": ["text", …]}               → sentence vectors (embed.swift)
 // `schema` is the JSON Schema Hysj already sends its other models; it's
 // turned into a DynamicGenerationSchema so the answer always fits it.
 import Foundation
@@ -10,6 +11,7 @@ import FoundationModels
 
 struct Request: Decodable {
     var check: Bool?
+    var embed: [String]?
     var system: String?
     var user: String?
     var schema: JSONValue?
@@ -72,6 +74,10 @@ struct Main {
         while let line = readLine(strippingNewline: true) {
             guard let req = try? JSONDecoder().decode(Request.self, from: Data(line.utf8)) else {
                 reply(["error": "bad request"]); continue
+            }
+            if let texts = req.embed {
+                reply(await embed(texts))
+                continue
             }
             if req.check == true {
                 var reason = ""

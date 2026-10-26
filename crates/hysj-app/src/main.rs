@@ -189,6 +189,15 @@ async fn digest_hours(b: State<'_, Bridge>, hours: Option<Vec<i8>>) -> Res<Vec<i
 }
 
 #[tauri::command]
+async fn kind_correct(b: State<'_, Bridge>, record: String, kind: String) -> Res<()> {
+    b.call(
+        method::KIND_CORRECT,
+        hysj_proto::KindCorrect { record, kind },
+    )
+    .await
+}
+
+#[tauri::command]
 async fn digest_set(b: State<'_, Bridge>, key: String, on: bool) -> Res<()> {
     b.call(method::DIGEST_SET, hysj_proto::DigestSet { key, on })
         .await
@@ -465,6 +474,7 @@ fn main() {
             signal_list,
             digest_set,
             digest_hours,
+            kind_correct,
             ai_settings,
             app_version,
             system_info,

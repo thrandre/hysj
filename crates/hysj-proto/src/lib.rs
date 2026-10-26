@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Bumped on any incompatible change to the types below.
-pub const PROTOCOL_VERSION: u32 = 25;
+pub const PROTOCOL_VERSION: u32 = 26;
 
 // --- JSON-RPC 2.0 envelopes -------------------------------------------------
 
@@ -145,6 +145,9 @@ pub mod method {
     pub const DIGEST_EDITION: &str = "digest/edition";
     /// Whether the on-device AI runs; with params, turn it on or off first.
     pub const AI_SETTINGS: &str = "ai/settings";
+    /// "Not a booking": what a booking's or order's mail really is (a kind in
+    /// `hysj_core::kinds`). The card goes; the classifier learns from it.
+    pub const KIND_CORRECT: &str = "kind/correct";
     /// The digest's delivery hours; with `hours`, set them first.
     pub const DIGEST_HOURS: &str = "digest/hours";
     /// Change a Digest setting offered in an edition (see `Control`).
@@ -763,6 +766,15 @@ pub struct AiSettings {
     /// Why not ("appleIntelligenceNotEnabled", "deviceNotEligible", "modelNotReady", …).
     #[serde(default)]
     pub apple_reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct KindCorrect {
+    /// The booking's or order's key.
+    pub record: String,
+    /// "booking", "order", "subscription", "offer" or "other".
+    pub kind: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

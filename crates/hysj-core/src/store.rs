@@ -191,6 +191,19 @@ const MIGRATIONS: &[&str] = &[
          ON a.key = s.message AND a.task = 'booking' AND a.result = 'booking');
      DELETE FROM booking_sources WHERE booking NOT IN (SELECT key FROM bookings);
      DELETE FROM ai_cache WHERE task = 'booking' AND result = 'booking'",
+    // v20: a classifier decides what kind of mail it is (kinds.rs): sentence
+    // vectors, the reader's corrections, and everything the model filed read again.
+    "CREATE TABLE vectors (key TEXT NOT NULL, model TEXT NOT NULL, vec BLOB NOT NULL, PRIMARY KEY (key, model));
+     CREATE TABLE kind_labels (key TEXT PRIMARY KEY, kind TEXT NOT NULL, at INTEGER NOT NULL);
+     DELETE FROM bookings WHERE key IN (
+         SELECT s.booking FROM booking_sources s JOIN ai_cache a
+         ON a.key = s.message AND a.task = 'booking' AND a.ok = 1);
+     DELETE FROM orders WHERE key IN (
+         SELECT s.order_key FROM order_sources s JOIN ai_cache a
+         ON a.key = s.message AND a.task = 'booking' AND a.result LIKE 'order:%');
+     DELETE FROM order_sources WHERE order_key NOT IN (SELECT key FROM orders);
+     DELETE FROM booking_sources WHERE booking NOT IN (SELECT key FROM bookings);
+     DELETE FROM ai_cache WHERE task = 'booking'",
 ];
 
 /// SQL for a message's key in the `done` table.
@@ -1843,11 +1856,13 @@ pub struct BookingCandidate {
     /// `None` until fetched (lazy, like `show`).
     pub body: Option<String>,
     pub sent: Option<i64>,
+    /// What the classifier says it is (booking, order, subscription).
+    pub kind: String,
 }
 
 impl Store {
-    /// Mail with booking words in the subject that the rules found nothing in
-    /// (no schema.org data), not yet read by the model: (id, key, from, subject, body).
+    /// Mail the classifier is sure is a booking, order or subscription and
+    /// the rules found nothing in (no schema.org data), not yet read by the model.
     pub fn booking_candidates(
         &self,
         model: &str,
@@ -1855,16 +1870,15 @@ impl Store {
     ) -> Result<Vec<BookingCandidate>, StoreError> {
         let mut q = self.db.prepare(&format!(
             "SELECT id, {DONE_KEY}, coalesce(from_name, from_addr), subject,
-                    (SELECT text FROM bodies WHERE bodies.message = messages.id), date, from_addr
-             FROM messages JOIN extracted e ON e.key = {DONE_KEY}
-             WHERE e.kind IS NULL
-               -- Marketing mail (List-Unsubscribe etc.) offers, it doesn't confirm.
-               AND messages.reason NOT LIKE '%\"kind\":\"bulk\"%'
+                    (SELECT text FROM bodies WHERE bodies.message = messages.id), date, from_addr, k.result
+             FROM messages JOIN ai_cache k ON k.key = {DONE_KEY} AND k.task = 'kind' AND k.ok = 1
+             LEFT JOIN extracted e ON e.key = {DONE_KEY}
+             WHERE e.kind IS NULL AND k.result IN ('booking', 'order', 'subscription')
                AND NOT EXISTS (SELECT 1 FROM ai_cache a WHERE a.key = {DONE_KEY} AND a.model = ?1
                                AND a.task = 'booking' AND (a.ok = 1 OR a.attempts >= 2))
-             ORDER BY date DESC"
+             GROUP BY messages.id ORDER BY date DESC LIMIT ?2"
         ))?;
-        let rows = q.query_map([model], |r| {
+        let rows = q.query_map(params![model, limit as i64], |r| {
             Ok(BookingCandidate {
                 id: r.get::<_, i64>(0)?.to_string(),
                 key: r.get(1)?,
@@ -1873,21 +1887,125 @@ impl Store {
                 body: r.get(4)?,
                 sent: r.get(5)?,
                 addr: r.get(6)?,
+                kind: r.get(7)?,
             })
         })?;
-        let mut out = Vec::new();
-        for row in rows {
-            let row = row?;
-            if crate::extract::candidate(&row.subject)
-                == Some(crate::extract::Candidate::Structured)
-            {
-                out.push(row);
-                if out.len() == limit {
-                    break;
-                }
-            }
+        rows.collect()
+    }
+
+    /// Digest mail the classifier hasn't sorted yet (with `model`'s vectors),
+    /// newest first; FINN alerts, codes and schema.org mail are the rules'.
+    pub fn unsorted(&self, model: &str, limit: usize) -> Result<Vec<BookingCandidate>, StoreError> {
+        let mut q = self.db.prepare(&format!(
+            "SELECT id, {DONE_KEY}, coalesce(from_name, from_addr), subject,
+                    (SELECT text FROM bodies WHERE bodies.message = messages.id), date, from_addr
+             FROM messages LEFT JOIN extracted e ON e.key = {DONE_KEY}
+             WHERE bucket = 'digest' AND e.kind IS NULL
+               AND NOT EXISTS (SELECT 1 FROM ai_cache a WHERE a.key = {DONE_KEY} AND a.model = ?1
+                               AND a.task = 'kind' AND (a.ok = 1 OR a.attempts >= 2))
+             ORDER BY date DESC LIMIT ?2"
+        ))?;
+        let rows = q.query_map(params![model, limit as i64], |r| {
+            Ok(BookingCandidate {
+                id: r.get::<_, i64>(0)?.to_string(),
+                key: r.get(1)?,
+                from: r.get(2)?,
+                subject: r.get(3)?,
+                body: r.get(4)?,
+                sent: r.get(5)?,
+                addr: r.get(6)?,
+                kind: String::new(),
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Whether a sender has sent a booking, order or subscription (as sorted):
+    /// then all their mail is read in full ("Nå er det nært" is a booking's).
+    pub fn sender_has_kind(&self, addr: &str) -> Result<bool, StoreError> {
+        self.db.query_row(
+            &format!(
+                "SELECT EXISTS (SELECT 1 FROM messages JOIN ai_cache a ON a.key = {DONE_KEY}
+                 WHERE lower(messages.from_addr) = lower(?1) AND a.task = 'kind'
+                   AND a.result IN ('booking', 'order', 'subscription'))"
+            ),
+            [addr],
+            |r| r.get(0),
+        )
+    }
+
+    /// Sorts a sender's mail that the first pass skipped again (see
+    /// [`Self::sender_has_kind`]).
+    pub fn resort_sender(&self, addr: &str) -> Result<(), StoreError> {
+        self.db.execute(
+            &format!(
+                "DELETE FROM ai_cache WHERE task = 'kind' AND result = 'skipped' AND key IN (
+                     SELECT {DONE_KEY} FROM messages WHERE lower(from_addr) = lower(?1))"
+            ),
+            [addr],
+        )?;
+        Ok(())
+    }
+
+    /// A stored sentence vector.
+    pub fn vector(&self, key: &str, model: &str) -> Result<Option<Vec<f32>>, StoreError> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT vec FROM vectors WHERE key = ?1 AND model = ?2",
+                params![key, model],
+                |r| r.get::<_, Vec<u8>>(0),
+            )
+            .optional()?
+            .map(|b| crate::kinds::from_blob(&b)))
+    }
+
+    pub fn put_vector(&self, key: &str, model: &str, v: &[f32]) -> Result<(), StoreError> {
+        self.db.execute(
+            "INSERT OR REPLACE INTO vectors (key, model, vec) VALUES (?1, ?2, ?3)",
+            params![key, model, crate::kinds::to_blob(v)],
+        )?;
+        Ok(())
+    }
+
+    /// The reader's corrections: (message key, kind).
+    pub fn kind_labels(&self) -> Result<Vec<(String, String)>, StoreError> {
+        let mut q = self
+            .db
+            .prepare("SELECT key, kind FROM kind_labels ORDER BY at")?;
+        let rows = q.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect()
+    }
+
+    /// "This isn't a booking, it's a subscription": the booking or order
+    /// `record` (its key) is removed, the mails it came from are labelled
+    /// `kind` for the classifier and sorted again. Returns the mails' keys.
+    pub fn correct_kind(&mut self, record: &str, kind: &str) -> Result<Vec<String>, StoreError> {
+        let tx = self.db.transaction()?;
+        let messages: Vec<String> = {
+            let mut q = tx.prepare(
+                "SELECT message FROM booking_sources WHERE booking = ?1
+                 UNION SELECT message FROM order_sources WHERE order_key = ?1",
+            )?;
+            q.query_map([record], |r| r.get(0))?
+                .collect::<Result<_, _>>()?
+        };
+        for m in &messages {
+            tx.execute(
+                "INSERT OR REPLACE INTO kind_labels (key, kind, at) VALUES (?1, ?2, unixepoch())",
+                params![m, kind],
+            )?;
+            tx.execute(
+                "DELETE FROM ai_cache WHERE key = ?1 AND task IN ('kind', 'booking')",
+                [m],
+            )?;
         }
-        Ok(out)
+        tx.execute("DELETE FROM bookings WHERE key = ?1", [record])?;
+        tx.execute("DELETE FROM booking_sources WHERE booking = ?1", [record])?;
+        tx.execute("DELETE FROM orders WHERE key = ?1", [record])?;
+        tx.execute("DELETE FROM order_sources WHERE order_key = ?1", [record])?;
+        tx.commit()?;
+        Ok(messages)
     }
 
     /// Files a booking found by the model, merged like any other.

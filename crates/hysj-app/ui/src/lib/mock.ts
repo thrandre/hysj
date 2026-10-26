@@ -53,6 +53,11 @@ export async function mock(name: string, args: Record<string, unknown>): Promise
     code_settings: () => s.codeSettings,
     booking_list: () => s.bookings,
     order_list: () => s.orders,
+    kind_correct: () => {
+      s.bookings = s.bookings.filter((b) => b.key !== args.record);
+      s.orders = s.orders.filter((o) => o.key !== args.record);
+      return null;
+    },
     signal_list: () => s.signals ?? [],
     ai_settings: () => ({ enabled: true, on_battery: false, waiting_for_power: false, model: 'gemma3-4b-q4k', size: 'apple', recommended: 'apple', apple_available: true, apple_reason: '', ...(args.set as object | null) }),
     app_version: () => '0.1.0',

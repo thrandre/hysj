@@ -252,43 +252,31 @@ pub async fn pass<W: Writer>(hub: &Hub, w: &W, model: &str) -> usize {
                     total: &g.total,
                     ships: g.ships,
                 };
-                let what = g.what.as_str();
-                let order = matches!(what, "purchase" | "rental" | "subscription");
+                // The classifier decided what it is; the model only found the facts.
+                let what = c.kind.as_str();
                 let mut d = hub.daemon.lock().await;
-                // Decided by a fact, not the label: a stated time to show up,
-                // after the mail was sent, is a booking (a paid ticket too).
-                let booking = if what == "booking" {
-                    checked_booking(&all, c.sent, &read)
-                } else if !g.attend.trim().is_empty() {
-                    // "16:00" alone takes its date from the start.
-                    let attend = g.attend.trim();
-                    let at = if attend.len() >= 10 {
-                        attend.to_string()
-                    } else {
-                        format!("{}T{attend}", g.start.get(..10).unwrap_or_default())
-                    };
-                    checked_booking(&all, c.sent, &ModelRead { start: &at, ..read })
-                } else {
-                    None
-                };
                 // A mail with a booking's number belongs to it: a confirmation
                 // without dates, or its payment.
                 let linked = || {
                     stated_number(&all, &g.reference)
                         .is_some_and(|n| d.store.link_booking(n, &c.key, date).unwrap_or(false))
                 };
+                let booking = (what == "booking")
+                    .then(|| checked_booking(&all, c.sent, &read))
+                    .flatten();
                 if let Some(b) = booking {
                     let _ = d.store.record_booking(&c.key, &b, date);
                     Ok("booking".to_string())
                 } else if linked() {
                     Ok(format!("linked:{what}"))
-                } else if let Some(o) = order.then(|| checked_order(&all, &read)).flatten() {
+                } else if let Some(o) = (what != "booking")
+                    .then(|| checked_order(&all, &read))
+                    .flatten()
+                {
                     let _ = d.store.record_order(&c.key, &o, date);
                     Ok(format!("order:{what}"))
-                } else if order || what == "booking" {
-                    Ok(format!("unverified:{what}"))
                 } else {
-                    Ok(format!("none:{what}"))
+                    Ok(format!("unverified:{what}"))
                 }
             }
             Err(e) => Err(e.to_string()),
@@ -372,6 +360,7 @@ pub async fn run(hub: Arc<Hub>) {
         return;
     }
     let mut llm: Option<Llm> = None;
+    let mut sorter: Option<crate::kinds::Sorter> = None;
     let mut last_work = std::time::Instant::now();
     let mut waiting_for_power = false;
     refresh_apple().await;
@@ -415,6 +404,23 @@ pub async fn run(hub: Arc<Hub>) {
             tokio::time::sleep(EVERY).await;
             continue;
         }
+        // What kind each mail is comes first: the booking pass reads it.
+        if sorter.is_none() {
+            match crate::kinds::Sorter::start().await {
+                Ok(s) => sorter = Some(s),
+                Err(e) => tracing::warn!(error = %e, "can't sort mail by kind; trying again later"),
+            }
+        }
+        let mut sorted = 0;
+        if let Some(s) = &mut sorter {
+            match s.pass(&hub).await {
+                Ok(n) => sorted = n,
+                Err(e) => {
+                    tracing::warn!(error = %e, "sorting by kind failed");
+                    sorter = None;
+                }
+            }
+        }
         if has_work(&hub, model).await {
             last_work = std::time::Instant::now();
             if llm.is_none() {
@@ -434,6 +440,9 @@ pub async fn run(hub: Arc<Hub>) {
                     continue; // more work may be waiting
                 }
             }
+        }
+        if sorted > 0 {
+            continue;
         }
         tokio::time::sleep(EVERY).await;
     }

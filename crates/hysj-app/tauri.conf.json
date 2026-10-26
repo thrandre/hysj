@@ -48,7 +48,7 @@
     ],
     "createUpdaterArtifacts": true,
     "macOS": {
-      "minimumSystemVersion": "13.0",
+      "minimumSystemVersion": "14.0",
       "signingIdentity": "-"
     },
     "externalBin": [

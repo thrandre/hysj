@@ -12,7 +12,7 @@ import type { Unsure } from "./Unsure";
  */
 export type Edition = { pick: number, 
 /**
- * "Wednesday · 16:00 digest · since 08:00 · 4 min".
+ * "Wednesday · 16:00 digest · since 08:00 today · 4 min".
  */
 meta: string, headline: string, lede: string, stories: Array<Story>, ending: Ending, 
 /**

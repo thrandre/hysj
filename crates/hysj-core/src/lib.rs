@@ -8,6 +8,7 @@ pub mod digest;
 pub mod edition;
 pub mod extract;
 pub mod finn;
+pub mod kinds;
 pub mod store;
 pub mod sync;
 pub mod text;

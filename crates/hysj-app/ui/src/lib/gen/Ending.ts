@@ -3,7 +3,7 @@ import type { Item } from "./Item";
 
 export type Ending = { 
 /**
- * "That’s everything since 08:00. Next digest tomorrow at 08:00."
+ * "That’s everything since 08:00 today. Next digest 08:00 tomorrow."
  */
 text: string, 
 /**

@@ -3,6 +3,7 @@
   import { api } from '../lib/api.ts';
   import { etaText, localParts, ordersHeadline, shortMonth } from '../lib/findit.ts';
   import Inline from '../components/Inline.svelte';
+  import KindFix from '../components/KindFix.svelte';
 
   const now = Date.now() / 1000;
   const today = new Date();
@@ -42,6 +43,7 @@
           {#if o.tracking_url}<button class="btn small" onclick={() => api.openLink(o.tracking_url!)}>Track</button>{/if}
           {#if o.receipt}<button class="btn small" onclick={() => toggle(o.receipt!)}>Receipt</button>{/if}
           {#if o.return_by && o.return_by > now}<span class="return">Return by {day(new Date(o.return_by * 1000))}</span>{/if}
+          <KindFix record={o.key} is="order" />
         </div>
         {#if o.receipt && app.open === o.receipt}<Inline id={o.receipt} />{/if}
       </div>

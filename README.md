@@ -74,7 +74,7 @@ on battery, and when it isn't sure you simply see the real subject line.
 
 ## Install
 
-Hysj runs on **Macs with Apple Silicon** (M1 or newer), macOS 13 or later.
+Hysj runs on **Macs with Apple Silicon** (M1 or newer), macOS 14 or later.
 
 1. Download the `.dmg` from the [latest release](https://github.com/thrandre/hysj/releases/latest)
    and drag Hysj to Applications.

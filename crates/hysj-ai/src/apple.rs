@@ -78,6 +78,26 @@ impl Helper {
         )?)
     }
 
+    /// Sentence vectors (unit length) for `texts`, and the embedding model's
+    /// id: vectors from different models never mix. Works without Apple
+    /// Intelligence (NaturalLanguage, macOS 14+).
+    pub async fn embed(&self, texts: &[String]) -> Result<(String, Vec<Vec<f32>>)> {
+        let a = self.request(&json!({ "embed": texts })).await?;
+        if let Some(e) = a["error"].as_str() {
+            bail!("embedding: {e}");
+        }
+        let model = a["model"].as_str().context("no model id")?.to_string();
+        let vectors: Vec<Vec<f32>> = serde_json::from_value(a["vectors"].clone())?;
+        if vectors.len() != texts.len() {
+            bail!(
+                "embedding: {} vectors for {} texts",
+                vectors.len(),
+                texts.len()
+            );
+        }
+        Ok((model, vectors))
+    }
+
     /// The model's answer to `user` under `system`, fitted to `schema`, as JSON.
     pub async fn ask(
         &self,

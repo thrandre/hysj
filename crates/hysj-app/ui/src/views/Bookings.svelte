@@ -4,6 +4,7 @@
   import { bookingDetail, bookingsHeadline, groupTrips, isTrip, localParts, shortMonth, tripTitle } from '../lib/findit.ts';
   import type { BookingItem } from '../lib/types.ts';
   import Inline from '../components/Inline.svelte';
+  import KindFix from '../components/KindFix.svelte';
 
   const now = Date.now() / 1000;
   let upcoming = $derived(app.data!.bookings.filter((b) => b.start_ts === null || b.start_ts >= now - 12 * 3600));
@@ -27,6 +28,7 @@
         <button class="source" onclick={() => toggle(b.message!)}>{b.sources <= 1 ? 'Confirmation email' : `Confirmation + ${b.sources - 1} update${b.sources > 2 ? 's' : ''}`}</button>
         {#if app.open === b.message}<Inline id={b.message} />{/if}
       {/if}
+      <KindFix record={b.key} is="booking" />
     </div>
     <button class="ref" aria-label="Copy reference {b.reference}" onclick={() => copy(b.reference, `ref:${b.key}`)}>
       <span class="mono">{b.reference}</span><span class="copy">{app.copied === `ref:${b.key}` ? 'Copied' : 'Copy'}</span>

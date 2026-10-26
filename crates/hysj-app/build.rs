@@ -25,7 +25,8 @@ fn npm(args: &[&str]) {
 /// Builds `hysj-apple-ai` (Apple's on-device model; hysj-ai/apple) where
 /// Tauri bundles it (`binaries/`, see externalBin) and beside the binaries
 /// for `cargo run`. Without the macOS 26 SDK it builds a stub that says
-/// "unavailable", so the app still builds and just hides the choice.
+/// "unavailable", so the app still builds and just hides the choice; both
+/// give sentence vectors (embed.swift).
 fn apple_helper() {
     let src = Path::new("../hysj-ai/apple");
     println!(
@@ -36,6 +37,10 @@ fn apple_helper() {
         "cargo:rerun-if-changed={}",
         src.join("stub.swift").display()
     );
+    println!(
+        "cargo:rerun-if-changed={}",
+        src.join("embed.swift").display()
+    );
     let target = std::env::var("TARGET").expect("cargo sets TARGET");
     std::fs::create_dir_all("binaries").expect("binaries/");
     let out = format!("binaries/hysj-apple-ai-{target}");
@@ -44,6 +49,7 @@ fn apple_helper() {
             .args(["-O", "-parse-as-library", "-target"])
             .arg(format!("arm64-apple-macos{min_os}"))
             .arg(src.join(file))
+            .arg(src.join("embed.swift"))
             .args(["-o", &out])
             .status()
             .is_ok_and(|s| s.success())
@@ -59,7 +65,7 @@ fn apple_helper() {
             "cargo:warning=hysj-apple-ai: no Foundation Models in this SDK; building the stub"
         );
         assert!(
-            swiftc("stub.swift", "13.0"),
+            swiftc("stub.swift", "14.0"),
             "swiftc couldn't build hysj-apple-ai"
         );
     }

@@ -70,6 +70,7 @@ export const api = {
   search: (query: string) => call<Found[]>('search', { query }),
   digestEdition: (pick: number) => call<Edition>('digest_edition', { pick }),
   digestSet: (key: string, on: boolean) => call<null>('digest_set', { key, on }),
+  kindCorrect: (record: string, kind: string) => call<null>('kind_correct', { record, kind }),
   digestHours: (hours?: number[]) => call<number[]>('digest_hours', { hours: hours ?? null }),
   aiSettings: (set?: AiSettings) => call<AiSettings>('ai_settings', { set: set ?? null }),
   appVersion: () => call<string>('app_version'),

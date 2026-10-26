@@ -951,17 +951,18 @@ pub fn checked_booking(text: &str, sent: Option<i64>, m: &ModelRead) -> Option<B
         let s = s.trim();
         (s.len() >= 10 && states_date(text, s)).then(|| s.to_string())
     };
+    // A time the mail doesn't state (the model's midnight) is dropped.
+    let date = |s: &str| {
+        date(s).map(|d| match d.get(11..16) {
+            Some(t) if states_time(text, t) => d[..16].to_string(),
+            _ => d[..10].to_string(),
+        })
+    };
     let start = date(m.start)?;
     let kind = match m.kind {
         k @ ("hotel" | "flight" | "train" | "bus" | "table" | "event") => k,
         _ => "event",
     };
-    // Showing up is at a time the mail states; only a hotel stay is just
-    // dates. A bare date (or the model's midnight) is a subscription's start
-    // or a delivery day, not a booking.
-    if kind != "hotel" && !start.get(11..16).is_some_and(|t| states_time(text, t)) {
-        return None;
-    }
     if let Some(sent) = sent
         && local_ts(&start)? <= sent
     {
@@ -1078,32 +1079,21 @@ mod model_booking_tests {
             .is_none(),
             "a sentence is not a number"
         );
-        let sub = "Ordrebekreftelse. Ordrenummer o-4471902. Abonnement: Total, måned. Startdato 2026-09-02.";
-        assert!(
-            checked_booking(
-                sub,
-                SENT,
-                &ModelRead {
-                    reference: "o-4471902",
-                    start: "2026-09-02",
-                    ..read
-                }
-            )
-            .is_none(),
-            "a subscription's start date is not a time to show up"
-        );
-        assert!(
-            checked_booking(
-                sub,
-                SENT,
-                &ModelRead {
-                    reference: "o-4471902",
-                    start: "2026-09-02T00:00:00",
-                    ..read
-                }
-            )
-            .is_none(),
-            "a time the mail doesn't state is not kept"
+        let sub = "Ordrebekreftelse. Ordrenummer o-4471902. Startdato 2026-09-02.";
+        let b = checked_booking(
+            sub,
+            SENT,
+            &ModelRead {
+                reference: "o-4471902",
+                start: "2026-09-02T00:00:00",
+                ..read
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            b.start.as_deref(),
+            Some("2026-09-02"),
+            "a time the mail doesn't state is dropped"
         );
         let b = checked_booking(
             "Ankomst 14. sep 2026, bokningsnr AB-99812",
