@@ -3418,7 +3418,7 @@ dependencies = [
 
 [[package]]
 name = "hysj-ai"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "mistralrs",
@@ -3430,7 +3430,7 @@ dependencies = [
 
 [[package]]
 name = "hysj-app"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.22.1",
  "dirs 6.0.0",
@@ -3449,7 +3449,7 @@ dependencies = [
 
 [[package]]
 name = "hysj-cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3465,7 +3465,7 @@ dependencies = [
 
 [[package]]
 name = "hysj-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ammonia",
  "base64 0.22.1",
@@ -3482,7 +3482,7 @@ dependencies = [
 
 [[package]]
 name = "hysj-imap"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "async-imap",
  "futures-util",
@@ -3497,7 +3497,7 @@ dependencies = [
 
 [[package]]
 name = "hysj-proto"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3506,7 +3506,7 @@ dependencies = [
 
 [[package]]
 name = "hysjd"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
