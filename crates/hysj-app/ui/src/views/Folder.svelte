@@ -1,43 +1,34 @@
 <script lang="ts">
-  // Sent and the Archive (cleared mail, `done`): rows that open in place; Done can put a message back.
-  import { act, app, toggle, visible } from '../lib/app.svelte.ts';
-  import { api } from '../lib/api.ts';
+  // Sent: rows that open in place.
+  import { app, toggle, visible } from '../lib/app.svelte.ts';
   import { shortMonth } from '../lib/findit.ts';
   import { hhmm, subject } from '../lib/words.ts';
   import Inline from '../components/Inline.svelte';
 
-  let { folder }: { folder: 'sent' | 'done' } = $props();
-  let items = $derived(visible(folder === 'sent' ? app.data!.sent : app.data!.done));
+  let items = $derived(visible(app.data!.sent));
   const when = (ts: number | null) => (ts ? `${new Date(ts * 1000).getDate()} ${shortMonth(new Date(ts * 1000))} ${hhmm(new Date(ts * 1000))}` : '');
 </script>
 
 <div class="column">
   <header>
-    {#if folder === 'sent'}
-      <p class="meta">Sent · newest first</p>
-      <h1 class="h1">What you sent.</h1>
-    {:else}
-      <p class="meta">Archive · newest first</p>
-      <h1 class="h1">Everything you cleared.</h1>
-      <p class="lede">Mail you marked done or read, from the Desk and the Digest. Restore puts a message back where it was.</p>
-    {/if}
+    <p class="meta">Sent · newest first</p>
+    <h1 class="h1">What you sent.</h1>
   </header>
   {#if items.length}
     <div class="card list">
       {#each items as m (m.id)}
         <div class="row">
           <button class="open" onclick={() => toggle(m.id)}>
-            <strong>{folder === 'sent' ? `To ${m.to ?? ''}` : m.from}</strong>
+            <strong>To {m.to ?? ''}</strong>
             <span>{subject(m.subject)}</span>
           </button>
-          {#if folder === 'done'}<button class="btn small" onclick={() => act(null, () => api.restore([m.id]))}>Restore</button>{/if}
           <span class="mono when">{when(m.ts)}</span>
         </div>
         {#if app.open === m.id}<div class="pad"><Inline id={m.id} /></div>{/if}
       {/each}
     </div>
   {:else}
-    <p class="empty">{folder === 'sent' ? 'Nothing sent yet.' : 'Nothing archived yet.'}</p>
+    <p class="empty">Nothing sent yet.</p>
   {/if}
 </div>
 

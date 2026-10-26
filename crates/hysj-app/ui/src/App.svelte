@@ -10,6 +10,7 @@
   import Bookings from './views/Bookings.svelte';
   import Orders from './views/Orders.svelte';
   import Folder from './views/Folder.svelte';
+  import Archive from './views/Archive.svelte';
   import Settings from './views/Settings.svelte';
   import Search from './views/Search.svelte';
   import Welcome from './views/Welcome.svelte';
@@ -61,8 +62,10 @@
     <Bookings />
   {:else if app.view === 'orders'}
     <Orders />
-  {:else if app.view === 'sent' || app.view === 'done'}
-    {#key app.view}<Folder folder={app.view} />{/key}
+  {:else if app.view === 'sent'}
+    <Folder />
+  {:else if app.view === 'done'}
+    <Archive />
   {:else if app.view === 'settings'}
     <Settings />
   {:else if app.view === 'search'}

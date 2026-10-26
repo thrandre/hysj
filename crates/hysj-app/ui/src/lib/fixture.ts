@@ -58,7 +58,10 @@ export async function fixture(): Promise<Snapshot> {
     digest,
     screener,
     sent: [msg({ from: 'Kai', subject: 'Re: Contract v2', to: 'Aisha Rahman', bucket: 'people', ts: now - 70 * h })],
-    done: [],
+    done: [
+      msg({ from: 'Aisha Rahman', subject: 'Re: Contract v2', replied: true, ts: now - 26 * h }),
+      msg({ from: 'Spond', subject: 'Training moved to 19:00', bucket: 'digest', intent: 'know', reason: { kind: 'no_reply' }, ts: now - 30 * h }),
+    ],
     codes: [
       { id: 'c1', kind: 'sign-in code', reset: false, service: 'Example', sender_domain: 'example.com', code: '482913', link: null, link_host: null, link_ok: false, arrived: now - 60, expires: now + 540, reported: false },
     ],

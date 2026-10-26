@@ -52,10 +52,10 @@
     {/if}
     {#if app.view === 'focus'}
       <button class="pill" onclick={() => go('desk')}>Back to Desk</button>
-    {:else if ['sent', 'done', 'settings', 'search'].includes(app.view)}
+    {:else if ['sent', 'settings', 'search'].includes(app.view)}
       <button class="link" onclick={() => go('desk')}>Back to Desk</button>
     {:else}
-      <button class="link" onclick={() => go('done')}>Archive</button>
+      {#if app.view !== 'done'}<button class="link" onclick={() => go('done')}>Archive</button>{/if}
       <button class="link" onclick={() => go('settings')}>Settings</button>
     {/if}
   </nav>

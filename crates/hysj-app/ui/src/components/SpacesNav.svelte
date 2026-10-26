@@ -12,6 +12,7 @@
       ['codes', 'Codes', String(s.codes.filter((c) => c.expires > now).length)],
       ['bookings', 'Bookings', String(s.bookings.filter((b) => b.start_ts === null || b.start_ts >= now - 12 * 3600).length)],
       ['orders', 'Orders', String(s.orders.filter((o) => o.status < 4).length)],
+      ['done', 'Archive', ''],
     ] as [View, string, string][];
   });
 </script>
@@ -19,7 +20,7 @@
 <nav aria-label="Spaces">
   {#each items as [view, label, count] (view)}
     <button aria-current={app.view === view ? 'page' : undefined} onclick={() => go(view)}>
-      <span>{label}</span><span class="count">{count}</span>
+      <span>{label}</span>{#if count}<span class="count">{count}</span>{/if}
     </button>
   {/each}
 </nav>

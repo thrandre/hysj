@@ -47,7 +47,7 @@ export async function mock(name: string, args: Record<string, unknown>): Promise
     },
     identity_list: () => s.identities,
     contact_list: () => s.contacts,
-    list: () => s[args.bucket as 'people' | 'digest' | 'screener'] ?? [],
+    list: () => (args.bucket === 'blocked' ? s.screener.slice(0, 1).map((m) => ({ ...m, id: 'blocked-1', bucket: 'blocked', reason: { kind: 'decision', decision: 'block' } })) : s[args.bucket as 'people' | 'digest' | 'screener']) ?? [],
     folder_list: () => s[args.folder as 'sent' | 'done'] ?? [],
     code_list: () => s.codes,
     code_settings: () => s.codeSettings,

@@ -82,7 +82,7 @@ export function hits(s: Snapshot, now: number): Hit[] {
     { kind: 'Sync', label: 'Check for new mail', hint: 'all accounts', go: { sync: true } },
     { kind: 'Focus', label: 'One at a time', hint: 'R reply · E done · H later · → skip', go: { view: 'focus' } },
     { kind: 'Sent', label: 'Sent mail', hint: 'newest first', go: { view: 'sent' } },
-    { kind: 'Archive', label: 'Archive — cleared mail', hint: 'restore from here', go: { view: 'done' } },
+    { kind: 'Archive', label: 'Open the archive', hint: 'everything that left your Desk · with reasons', go: { view: 'done' } },
     { kind: 'Settings', label: 'Add an account', hint: 'Outlook.com, iCloud or your own domain', go: { view: 'settings' } },
     { kind: 'Settings', label: 'Appearance', hint: 'light, dark or follow the system', go: { view: 'settings' } },
   );
