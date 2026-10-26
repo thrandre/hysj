@@ -184,6 +184,13 @@ const MIGRATIONS: &[&str] = &[
          WHERE bucket = 'digest' AND reason LIKE '%\"bulk\"%' AND reason NOT LIKE '%Auto-Submitted%')",
     // v18: what the reader calls each account.
     "ALTER TABLE accounts ADD COLUMN label TEXT",
+    // v19: model bookings read again: a time to show up must be one the
+    // mail states (a subscription's start date was a booking).
+    "DELETE FROM bookings WHERE key IN (
+         SELECT s.booking FROM booking_sources s JOIN ai_cache a
+         ON a.key = s.message AND a.task = 'booking' AND a.result = 'booking');
+     DELETE FROM booking_sources WHERE booking NOT IN (SELECT key FROM bookings);
+     DELETE FROM ai_cache WHERE task = 'booking' AND result = 'booking'",
 ];
 
 /// SQL for a message's key in the `done` table.

@@ -867,6 +867,23 @@ fn states_date(text: &str, iso: &str) -> bool {
             .any(|mon| t.contains(&format!("{d}. {mon}")) || t.contains(&format!("{d} {mon}")))
 }
 
+/// The mail states this time of day ("16:00", "16.00", "kl. 16").
+fn states_time(text: &str, hhmm: &str) -> bool {
+    let Some((h, m)) = hhmm.split_once(':') else {
+        return false;
+    };
+    let t = text.to_lowercase();
+    let short = h.trim_start_matches('0');
+    let mut forms = vec![format!("{h}:{m}"), format!("{h}.{m}")];
+    if !short.is_empty() {
+        forms.extend([format!(" {short}:{m}"), format!(" {short}.{m}")]);
+        if m == "00" {
+            forms.extend([format!("kl. {short}"), format!("kl {short}")]);
+        }
+    }
+    forms.iter().any(|f| t.contains(f.as_str()))
+}
+
 /// What the model read from a mail; checked against the mail before use.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ModelRead<'a> {
@@ -935,15 +952,21 @@ pub fn checked_booking(text: &str, sent: Option<i64>, m: &ModelRead) -> Option<B
         (s.len() >= 10 && states_date(text, s)).then(|| s.to_string())
     };
     let start = date(m.start)?;
+    let kind = match m.kind {
+        k @ ("hotel" | "flight" | "train" | "bus" | "table" | "event") => k,
+        _ => "event",
+    };
+    // Showing up is at a time the mail states; only a hotel stay is just
+    // dates. A bare date (or the model's midnight) is a subscription's start
+    // or a delivery day, not a booking.
+    if kind != "hotel" && !start.get(11..16).is_some_and(|t| states_time(text, t)) {
+        return None;
+    }
     if let Some(sent) = sent
         && local_ts(&start)? <= sent
     {
         return None;
     }
-    let kind = match m.kind {
-        k @ ("hotel" | "flight" | "train" | "bus" | "table" | "event") => k,
-        _ => "event",
-    };
     let opt = |s: &str| (!s.trim().is_empty()).then(|| s.trim().to_string());
     Some(Booking {
         kind: kind.into(),
@@ -1054,6 +1077,33 @@ mod model_booking_tests {
             )
             .is_none(),
             "a sentence is not a number"
+        );
+        let sub = "Ordrebekreftelse. Ordrenummer o-4471902. Abonnement: Total, måned. Startdato 2026-09-02.";
+        assert!(
+            checked_booking(
+                sub,
+                SENT,
+                &ModelRead {
+                    reference: "o-4471902",
+                    start: "2026-09-02",
+                    ..read
+                }
+            )
+            .is_none(),
+            "a subscription's start date is not a time to show up"
+        );
+        assert!(
+            checked_booking(
+                sub,
+                SENT,
+                &ModelRead {
+                    reference: "o-4471902",
+                    start: "2026-09-02T00:00:00",
+                    ..read
+                }
+            )
+            .is_none(),
+            "a time the mail doesn't state is not kept"
         );
         let b = checked_booking(
             "Ankomst 14. sep 2026, bokningsnr AB-99812",
