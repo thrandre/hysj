@@ -241,4 +241,30 @@ fn candidates() {
         "marketing 'code'"
     );
     assert_eq!(candidate("Nyhetsbrev oktober"), None);
+    // Code words count as words, not parts of other words.
+    for s in [
+        "[CodePen Spark] Neon Ghosts",
+        "Codex is out",
+        "Se hvordan du koder raskere",
+        "Små tilbakestillinger i livet",
+    ] {
+        assert_eq!(candidate(s), None, "{s}");
+    }
+    for s in [
+        "Din engangskode",
+        "Koden din",
+        "Verify your email",
+        "Your verification codes",
+        "Innloggingskode for Example",
+    ] {
+        assert_eq!(candidate(s), Some(Candidate::Code), "{s}");
+    }
+    // …and in the body: "CodePen" before a number doesn't make it a code.
+    let raw = mail(
+        AR_OK,
+        "Example <hello@service.example>",
+        "Verify your email",
+        "Join 48291 makers on CodePen 48291 today.",
+    );
+    assert_eq!(code_of(&raw), None);
 }

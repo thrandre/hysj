@@ -31,7 +31,7 @@ pub fn source(from_addr: &str) -> bool {
 const CODE_SUBJECT: &[&str] = &[
     "code",
     "kode",
-    "verif",
+    "verif*",
     "sign in",
     "sign-in",
     "logg inn",
@@ -113,6 +113,38 @@ const NOT_AUTH: &[&str] = &[
     "vervekode",
 ];
 
+/// Bumped when the code rules change so that mail they once took for a
+/// code isn't one: the store forgets those codes (see `Store::init`).
+pub const CODE_RULES: u32 = 2;
+
+/// Endings a code word may take and still be that word: "codes", "koden",
+/// "passordet", "verified". Anything longer is another word ("CodePen").
+const INFLECTIONS: &[&str] = &["", "s", "n", "en", "et", "ne", "ene", "er", "d", "ed"];
+
+/// Whether `text` (lower case) has `term` as a word: starting on a word
+/// boundary and ending in at most an inflection. A term ending in `*` is a
+/// prefix ("verif*": verify, verifisering). Nordic code words also end
+/// compounds ("innloggingskode", "verifieringskod").
+fn has_word(text: &str, term: &str) -> bool {
+    let (term, prefix) = match term.strip_suffix('*') {
+        Some(t) => (t, true),
+        None => (term, false),
+    };
+    let compound = matches!(term, "kode" | "kod");
+    text.match_indices(term).any(|(i, _)| {
+        let starts = compound
+            || text[..i]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !c.is_alphanumeric());
+        let rest: String = text[i + term.len()..]
+            .chars()
+            .take_while(|c| c.is_alphanumeric())
+            .collect();
+        starts && (prefix || INFLECTIONS.contains(&rest.as_str()))
+    })
+}
+
 pub fn candidate(subject: &str) -> Option<Candidate> {
     let s = subject.to_lowercase();
     if NOT_AUTH.iter().any(|w| s.contains(w)) {
@@ -121,7 +153,7 @@ pub fn candidate(subject: &str) -> Option<Candidate> {
             .any(|w| s.contains(w))
             .then_some(Candidate::Structured);
     }
-    if CODE_SUBJECT.iter().any(|w| s.contains(w)) {
+    if CODE_SUBJECT.iter().any(|w| has_word(&s, w)) {
         Some(Candidate::Code)
     } else if STRUCTURED_SUBJECT.iter().any(|w| s.contains(w)) {
         Some(Candidate::Structured)
@@ -487,8 +519,12 @@ fn code_token(text: &str) -> Option<String> {
             continue;
         }
         let close = before.trim_end();
+        let last = close
+            .rsplit(|c: char| !c.is_alphanumeric())
+            .next()
+            .unwrap_or_default();
         let introduced = close.ends_with(':')
-            || CODE_WORDS.iter().any(|w| close.ends_with(w))
+            || CODE_WORDS.iter().any(|w| has_word(last, w))
             || close.ends_with(" is")
             || close.ends_with(" er");
         // "1607 Fredrikstad": a postcode followed by a place name.
@@ -499,7 +535,7 @@ fn code_token(text: &str) -> Option<String> {
         if digits.len() == 4 && capital_next && !introduced {
             continue;
         }
-        let word = CODE_WORDS.iter().any(|w| before.contains(w))
+        let word = CODE_WORDS.iter().any(|w| has_word(&before, w))
             && !NOT_AUTH.iter().any(|w| before.contains(w));
         let year = digits.len() == 4 && (digits.starts_with("19") || digits.starts_with("20"));
         // A year only counts when the mail introduces it as the code.

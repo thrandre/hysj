@@ -257,6 +257,39 @@ impl Store {
                 i + 2
             ))?;
         }
+        // Codes the code rules no longer find (they once matched part of a
+        // word: "CodePen"): forgotten, their mail examined and sorted as mail.
+        let code_rules: Option<String> = db
+            .query_row("SELECT value FROM meta WHERE key = 'code_rules'", [], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        if code_rules != Some(crate::extract::CODE_RULES.to_string()) {
+            let mut q = db.prepare(&format!(
+                "SELECT DISTINCT c.key, messages.subject FROM codes c JOIN messages ON {DONE_KEY} = c.key"
+            ))?;
+            let stale: Vec<String> = q
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .filter(|(_, s)| {
+                    crate::extract::candidate(s) != Some(crate::extract::Candidate::Code)
+                })
+                .map(|(k, _)| k)
+                .collect();
+            drop(q);
+            for key in &stale {
+                db.execute("DELETE FROM codes WHERE key = ?1", [key])?;
+                db.execute("UPDATE extracted SET kind = NULL WHERE key = ?1", [key])?;
+            }
+            if !stale.is_empty() {
+                reclassify(&db)?;
+            }
+            db.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('code_rules', ?1)",
+                [crate::extract::CODE_RULES.to_string()],
+            )?;
+        }
         // Rules changed since this store was last sorted (or it never was): re-sort.
         let rules: Option<String> = db
             .query_row(
