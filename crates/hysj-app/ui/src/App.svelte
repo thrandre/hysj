@@ -16,6 +16,7 @@
   import Welcome from './views/Welcome.svelte';
   import Compose from './components/Compose.svelte';
   import CodePopup from './components/CodePopup.svelte';
+  import Opening from './components/Opening.svelte';
 
   start();
 
@@ -47,7 +48,7 @@
     </div>
   {/if}
   {#if !app.data}
-    <div class="column"><p class="loading">Opening your mail… (macOS may ask for keychain access)</p></div>
+    <Opening />
   {:else if app.view === 'desk'}
     <Desk />
   {:else if app.view === 'focus'}
@@ -88,9 +89,6 @@
     position: fixed;
     inset: 72px 0 0 0;
     overflow-y: auto;
-  }
-  .loading {
-    color: var(--muted);
   }
   .error {
     position: fixed;

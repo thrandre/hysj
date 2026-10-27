@@ -10,55 +10,57 @@
 
 <!-- The window's title bar: empty space drags the window (macOS buttons sit at the left). -->
 <header data-tauri-drag-region>
-  <button class="mark" onclick={() => go('desk')} title="Desk">Hysj!</button>
+  {#if app.data}
+    <button class="mark" onclick={() => go('desk')} title="Desk">Hysj!</button>
 
-  {#if app.view === 'focus'}
-    <div class="progress" role="img" aria-label="{Math.min(app.focus.at + 1, app.focus.queue.length)} of {app.focus.queue.length}" data-tauri-drag-region>
-      {#each app.focus.queue.slice(0, 24) as _, i (i)}
-        <span class:done={i < app.focus.at} class:now={i === app.focus.at}></span>
-      {/each}
-    </div>
-  {/if}
+    {#if app.view === 'focus'}
+      <div class="progress" role="img" aria-label="{Math.min(app.focus.at + 1, app.focus.queue.length)} of {app.focus.queue.length}" data-tauri-drag-region>
+        {#each app.focus.queue.slice(0, 24) as _, i (i)}
+          <span class:done={i < app.focus.at} class:now={i === app.focus.at}></span>
+        {/each}
+      </div>
+    {/if}
 
-  <nav class="links" aria-label="This space" data-tauri-drag-region>
-    <Working />
-    {#if app.view === 'desk' && app.data}
-      <UpdatePill />
-      <span class="held"><span class="dot" aria-hidden="true"></span>{held} held for {next}</span>
-      {#if app.data.accounts.length > 1}
-        <div class="segmented" role="group" aria-label="Accounts">
-          <button aria-pressed={app.account === null} onclick={() => (app.account = null)}>All</button>
-          {#each app.data.accounts as a (a.name)}
-            <button aria-pressed={app.account === a.name} onclick={() => (app.account = a.name)}>{accountLabel(a.name)}</button>
+    <nav class="links" aria-label="This space" data-tauri-drag-region>
+      <Working />
+      {#if app.view === 'desk' && app.data}
+        <UpdatePill />
+        <span class="held"><span class="dot" aria-hidden="true"></span>{held} held for {next}</span>
+        {#if app.data.accounts.length > 1}
+          <div class="segmented" role="group" aria-label="Accounts">
+            <button aria-pressed={app.account === null} onclick={() => (app.account = null)}>All</button>
+            {#each app.data.accounts as a (a.name)}
+              <button aria-pressed={app.account === a.name} onclick={() => (app.account = a.name)}>{accountLabel(a.name)}</button>
+            {/each}
+          </div>
+        {/if}
+        <button class="link" onclick={() => go('focus')}>One at a time</button>
+      {:else if app.view === 'digest'}
+        <div class="segmented" role="group" aria-label="Digest editions">
+          <button aria-pressed={app.digestPick === 0} onclick={() => (app.digestPick = 0)}>Latest</button>
+          {#each earlier(digestNow()) as [pick, label] (pick)}
+            <button aria-pressed={app.digestPick === pick} onclick={() => (app.digestPick = pick)}>{label}</button>
+          {/each}
+        </div>
+      {:else if app.view === 'bookings'}
+        <button class="link" onclick={() => (app.showPast = !app.showPast)}>{app.showPast ? 'Upcoming bookings' : 'Past bookings'}</button>
+      {:else if app.view === 'orders'}
+        <div class="segmented" role="group" aria-label="Filter orders">
+          {#each ['On the way', 'Delivered', 'Returns'] as label, i (label)}
+            <button aria-pressed={app.orderTab === i} onclick={() => (app.orderTab = i)}>{label}</button>
           {/each}
         </div>
       {/if}
-      <button class="link" onclick={() => go('focus')}>One at a time</button>
-    {:else if app.view === 'digest'}
-      <div class="segmented" role="group" aria-label="Digest editions">
-        <button aria-pressed={app.digestPick === 0} onclick={() => (app.digestPick = 0)}>Latest</button>
-        {#each earlier(digestNow()) as [pick, label] (pick)}
-          <button aria-pressed={app.digestPick === pick} onclick={() => (app.digestPick = pick)}>{label}</button>
-        {/each}
-      </div>
-    {:else if app.view === 'bookings'}
-      <button class="link" onclick={() => (app.showPast = !app.showPast)}>{app.showPast ? 'Upcoming bookings' : 'Past bookings'}</button>
-    {:else if app.view === 'orders'}
-      <div class="segmented" role="group" aria-label="Filter orders">
-        {#each ['On the way', 'Delivered', 'Returns'] as label, i (label)}
-          <button aria-pressed={app.orderTab === i} onclick={() => (app.orderTab = i)}>{label}</button>
-        {/each}
-      </div>
-    {/if}
-    {#if app.view === 'focus'}
-      <button class="pill" onclick={() => go('desk')}>Back to Desk</button>
-    {:else if ['sent', 'settings', 'search'].includes(app.view)}
-      <button class="link" onclick={() => go('desk')}>Back to Desk</button>
-    {:else}
-      {#if app.view !== 'done'}<button class="link" onclick={() => go('done')}>Archive</button>{/if}
-      <button class="link" onclick={() => go('settings')}>Settings</button>
-    {/if}
-  </nav>
+      {#if app.view === 'focus'}
+        <button class="pill" onclick={() => go('desk')}>Back to Desk</button>
+      {:else if ['sent', 'settings', 'search'].includes(app.view)}
+        <button class="link" onclick={() => go('desk')}>Back to Desk</button>
+      {:else}
+        {#if app.view !== 'done'}<button class="link" onclick={() => go('done')}>Archive</button>{/if}
+        <button class="link" onclick={() => go('settings')}>Settings</button>
+      {/if}
+    </nav>
+  {/if}
 </header>
 
 <style>

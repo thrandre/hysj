@@ -7,7 +7,10 @@ import { fixture, fixtureEdition } from './fixture.ts';
 let data: Promise<Snapshot> | null = null;
 
 function load(): Promise<Snapshot> {
-  data ??= fetch('/snapshot.local.json')
+  // `?opening`: the first load takes 8 s, to see the opening screen.
+  const hold = new URLSearchParams(location.search).has('opening') ? 8000 : 0;
+  data ??= new Promise((r) => setTimeout(r, hold))
+    .then(() => fetch('/snapshot.local.json'))
     .then((r) => (r.ok ? (r.json() as Promise<Snapshot>) : fixture()))
     .catch(() => fixture());
   return data;
