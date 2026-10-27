@@ -2,6 +2,7 @@
   import { accountLabel, app, digestNow, digestSplit, go, nextDigest } from '../lib/app.svelte.ts';
   import { earlier } from '../lib/digest.ts';
   import UpdatePill from './UpdatePill.svelte';
+  import Working from './Working.svelte';
 
   let next = $derived(nextDigest());
   let held = $derived(app.data ? digestSplit()[1].length : 0);
@@ -20,9 +21,8 @@
   {/if}
 
   <nav class="links" aria-label="This space" data-tauri-drag-region>
-    {#if app.busy}
-      <span class="busy">{app.busy}</span>
-    {:else if app.view === 'desk' && app.data}
+    <Working />
+    {#if app.view === 'desk' && app.data}
       <UpdatePill />
       <span class="held"><span class="dot" aria-hidden="true"></span>{held} held for {next}</span>
       {#if app.data.accounts.length > 1}
@@ -141,9 +141,6 @@
     height: 6px;
     border-radius: 50%;
     background: var(--accent);
-  }
-  .busy {
-    color: var(--muted);
   }
   .segmented {
     display: flex;

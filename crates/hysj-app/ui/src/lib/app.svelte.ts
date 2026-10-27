@@ -16,7 +16,8 @@ export const app = $state({
   /** The open message (Desk panel, or in place elsewhere). */
   open: null as string | null,
   error: null as string | null,
-  busy: null as string | null,
+  /** Actions under way (shown in the top strip when slow), oldest first. */
+  working: [] as { id: number; label: string; since: number }[],
   /** Rendered messages by id (fetched when opened). */
   views: {} as Record<string, MessageView>,
   /** A new email being written (Compose), with its recipient if known. */
@@ -152,10 +153,13 @@ export function start(): void {
   void onUpdateReady(update);
 }
 
+let jobs = 0;
+
 /** Runs an action with a busy note; errors land in the banner. The reload
  * after it runs in the background: the action is done when the daemon says so. */
 export async function act<T>(busy: string | null, f: () => Promise<T>): Promise<T | undefined> {
-  app.busy = busy;
+  const id = ++jobs;
+  app.working.push({ id, label: busy ?? 'Working…', since: Date.now() / 1000 });
   try {
     const r = await f();
     void reload();
@@ -164,7 +168,7 @@ export async function act<T>(busy: string | null, f: () => Promise<T>): Promise<
     app.error = String(e);
     return undefined;
   } finally {
-    app.busy = null;
+    app.working = app.working.filter((j) => j.id !== id);
   }
 }
 
@@ -172,7 +176,7 @@ export async function act<T>(busy: string | null, f: () => Promise<T>): Promise<
  * up (the call goes out first, so later fetches see it; a failure shows in
  * the banner and the next reload brings them back). */
 export function markDone(ids: string[]): Promise<number | undefined> {
-  const done = act(null, () => api.done(ids));
+  const done = act(ids.length === 1 ? 'Clearing…' : `Clearing ${ids.length} emails…`, () => api.done(ids));
   const gone = new Set(ids);
   const d = app.data;
   if (d) {

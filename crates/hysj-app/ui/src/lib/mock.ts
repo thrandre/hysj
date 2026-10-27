@@ -15,6 +15,9 @@ function load(): Promise<Snapshot> {
 
 export async function mock(name: string, args: Record<string, unknown>): Promise<unknown> {
   const s = await load();
+  // `?slow=3000`: actions (not reads) take that long, like a busy daemon.
+  const slow = Number(new URLSearchParams(location.search).get('slow'));
+  if (slow && /done|restore|decide|forget|send|correct|sync|save|report/.test(name)) await new Promise((r) => setTimeout(r, slow));
   const answers: Record<string, () => unknown> = {
     account_list: () => s.accounts,
     // The preview's stand-in for the daemon's provider.rs.
