@@ -166,15 +166,14 @@ impl Sorter {
                 }
             }
         }
+        let ids: Vec<String> = deeper.iter().map(|j| j.id.clone()).collect();
+        hub.fetch_bodies(&ids).await;
         let mut texts = Vec::new();
         let mut failed = Vec::new();
         {
-            let mut d = hub.daemon.lock().await;
+            let d = hub.daemon.lock().await;
             for j in &deeper {
-                let mut raw = d.store.raw(&j.id).ok().flatten();
-                if raw.is_none() && d.show(&j.id).await.is_ok() {
-                    raw = d.store.raw(&j.id).ok().flatten();
-                }
+                let raw = d.store.raw(&j.id).ok().flatten();
                 let body = raw.as_deref().and_then(kinds::reading);
                 match body {
                     Some(b) => {

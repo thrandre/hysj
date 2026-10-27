@@ -2,7 +2,7 @@
   // The Digest as an edition (Digest mockup): written by the daemon from the
   // delivery's mail; drawn here. Items open in place; photos are grey
   // placeholders (remote images never load here).
-  import { act, app, go, toggle } from '../lib/app.svelte.ts';
+  import { act, markDone, app, go, toggle } from '../lib/app.svelte.ts';
   import { api } from '../lib/api.ts';
   import type { Edition, Item, Section, Unsure } from '../lib/types.ts';
   import Inline from '../components/Inline.svelte';
@@ -209,7 +209,7 @@
         {/if}
       {/if}
       {#if edition.ids.length}
-        <button class="btn primary" onclick={() => act(null, () => api.done(edition!.ids))}>Mark as read</button>
+        <button class="btn primary" onclick={() => markDone(edition!.ids)}>Mark as read</button>
       {/if}
     </footer>
   {/if}

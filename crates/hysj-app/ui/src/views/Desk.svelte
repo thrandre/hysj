@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { act, accountSlot, app, toggle, visible } from '../lib/app.svelte.ts';
+  import { act, markDone, accountSlot, app, toggle, visible } from '../lib/app.svelte.ts';
   import { api } from '../lib/api.ts';
   import Inline from '../components/Inline.svelte';
   import Conversation from '../components/Conversation.svelte';
@@ -68,7 +68,7 @@
           </div>
           <div class="sig-actions">
             <button class="btn small primary" onclick={() => toggle(g.id)} aria-expanded={app.open === g.id}>{k.action}</button>
-            <button class="btn small" onclick={() => act(null, () => api.done(g.ids))}>Done</button>
+            <button class="btn small" onclick={() => markDone(g.ids)}>Done</button>
             <button class="btn small ghost" onclick={() => hold(g)}>Hold these for the digest</button>
           </div>
           {#if app.open === g.id}<Inline id={g.id} />{/if}

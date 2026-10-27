@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { act, accountLabel, accountSlot, app, holdSender, toggle } from '../lib/app.svelte.ts';
+  import { act, markDone, accountLabel, accountSlot, app, holdSender, toggle } from '../lib/app.svelte.ts';
   import { api } from '../lib/api.ts';
   import type { MessageSummary } from '../lib/types.ts';
   import { age, fileSize, firstName, reasonText } from '../lib/words.ts';
@@ -20,7 +20,7 @@
       <span class="name">{m.from}</span>
       <span class="sub"><span class="dot" style:background="var(--acct-{slot})"></span>{accountLabel(m.account)}{m.ts ? ` · ${age(m.ts, Date.now() / 1000)}` : ''}</span>
     </div>
-    <button class="btn small ghost" onclick={() => act(null, () => api.done([m.id])).then(() => (app.open = null))} title="Clear from the Desk">Done</button>
+    <button class="btn small ghost" onclick={() => { void markDone([m.id]); app.open = null; }} title="Clear from the Desk">Done</button>
     <button class="close" aria-label="Close" onclick={() => toggle(m.id)}>×</button>
   </header>
   <div class="why">

@@ -152,12 +152,13 @@ export function start(): void {
   void onUpdateReady(update);
 }
 
-/** Runs an action with a busy note; reloads after, errors land in the banner. */
+/** Runs an action with a busy note; errors land in the banner. The reload
+ * after it runs in the background: the action is done when the daemon says so. */
 export async function act<T>(busy: string | null, f: () => Promise<T>): Promise<T | undefined> {
   app.busy = busy;
   try {
     const r = await f();
-    await reload();
+    void reload();
     return r;
   } catch (e) {
     app.error = String(e);
@@ -165,6 +166,21 @@ export async function act<T>(busy: string | null, f: () => Promise<T>): Promise<
   } finally {
     app.busy = null;
   }
+}
+
+/** Clears messages from the Desk and the Digest at once; the daemon catches
+ * up (the call goes out first, so later fetches see it; a failure shows in
+ * the banner and the next reload brings them back). */
+export function markDone(ids: string[]): Promise<number | undefined> {
+  const done = act(null, () => api.done(ids));
+  const gone = new Set(ids);
+  const d = app.data;
+  if (d) {
+    d.people = d.people.filter((m) => !gone.has(m.id));
+    d.digest = d.digest.filter((m) => !gone.has(m.id));
+    d.signals = d.signals.filter((s) => !s.ids.some((i) => gone.has(i)));
+  }
+  return done;
 }
 
 /** Sends a sender's mail to the Digest from now on. Undo restores what they

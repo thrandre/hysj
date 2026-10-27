@@ -855,6 +855,42 @@ impl Hub {
         Ok(results)
     }
 
+    /// Fetches the bodies these messages lack, holding the daemon's lock only
+    /// around the store (as `sync` does): background work never keeps the
+    /// app's requests waiting on a mail server. One that fails stays without.
+    pub async fn fetch_bodies(&self, ids: &[String]) {
+        use hysj_core::MailBackend;
+        for id in ids {
+            let (name, remote_id, mut backend) = {
+                let mut d = self.daemon.lock().await;
+                let Ok(Some(s)) = d.store.get(id) else {
+                    continue;
+                };
+                if s.body.is_some() {
+                    continue;
+                }
+                let Ok(account) = d.account(&s.summary.account) else {
+                    continue;
+                };
+                if d.session(&account).await.is_err() {
+                    continue;
+                }
+                let backend = d.sessions.remove(&account.name).expect("connected above");
+                (account.name, s.remote_id, backend)
+            };
+            let raw = backend.fetch(&remote_id).await;
+            let mut d = self.daemon.lock().await;
+            match raw {
+                Ok(raw) => {
+                    let _ = sync::keep(&mut d.store, id, &raw);
+                    d.sessions.insert(name, backend);
+                }
+                // The session is suspect: dropped, reconnected next time.
+                Err(e) => tracing::warn!(account = %name, error = %e, "body fetch failed"),
+            }
+        }
+    }
+
     /// Tells every connected client that mail state changed (JMAP-style: they refetch).
     pub fn changed(&self) {
         let state = self.state.fetch_add(1, Ordering::Relaxed) + 1;

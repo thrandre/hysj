@@ -2,7 +2,7 @@
   // One at a time (Focus mockup): Reply (R), Done (E), Later (H), Skip (→).
   // ponytail: Later moves the message to the end of this session's queue; a
   // real snooze (back on the Desk at a chosen time) needs a store column.
-  import { act, app, go, nextDigest, startFocus } from '../lib/app.svelte.ts';
+  import { markDone, app, go, nextDigest, startFocus } from '../lib/app.svelte.ts';
   import { api } from '../lib/api.ts';
   import { age, initials, reasonText, subject } from '../lib/words.ts';
   import { accountSlot } from '../lib/app.svelte.ts';
@@ -41,7 +41,7 @@
     const { m, at } = current;
     app.focus.replying = s === 'reply';
     if (s === 'reply') return;
-    if (s === 'done') void act(null, () => api.done([m.id]));
+    if (s === 'done') void markDone([m.id]);
     if (s === 'later') app.focus.queue.push(m.id);
     app.focus.at = at + 1;
   }

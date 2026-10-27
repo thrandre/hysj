@@ -116,16 +116,21 @@ fn latest_delivery() -> (i64, i64) {
 pub async fn pass<W: Writer>(hub: &Hub, w: &W, model: &str) -> usize {
     let delivery = latest_delivery();
     // Pick jobs and make sure their bodies are here (fetched like `show`).
-    let jobs = {
-        let mut d = hub.daemon.lock().await;
-        let mut jobs = d.store.ai_jobs(model, delivery, BATCH).unwrap_or_default();
+    let mut jobs = (hub.daemon.lock().await.store)
+        .ai_jobs(model, delivery, BATCH)
+        .unwrap_or_default();
+    let missing: Vec<String> = jobs
+        .iter()
+        .filter(|j| j.body.is_none())
+        .map(|j| j.id.clone())
+        .collect();
+    hub.fetch_bodies(&missing).await;
+    {
+        let d = hub.daemon.lock().await;
         for j in jobs.iter_mut().filter(|j| j.body.is_none()) {
-            if let Ok(m) = d.show(&j.id).await {
-                j.body = Some(m.body);
-            }
+            j.body = d.store.get(&j.id).ok().flatten().and_then(|s| s.body);
         }
-        jobs
-    };
+    }
 
     let mut stored = 0;
     for j in jobs {
@@ -210,13 +215,19 @@ pub async fn pass<W: Writer>(hub: &Hub, w: &W, model: &str) -> usize {
     // Bookings and orders without schema.org data: the model says what the
     // mail is and where the facts are; only a number and dates the mail
     // itself states are kept.
+    let mut c = (hub.daemon.lock().await.store)
+        .booking_candidates(model, BATCH)
+        .unwrap_or_default();
+    let missing: Vec<String> = c
+        .iter()
+        .filter(|c| c.body.is_none())
+        .map(|c| c.id.clone())
+        .collect();
+    hub.fetch_bodies(&missing).await;
     let candidates = {
-        let mut d = hub.daemon.lock().await;
-        let mut c = d.store.booking_candidates(model, BATCH).unwrap_or_default();
+        let d = hub.daemon.lock().await;
         for c in c.iter_mut().filter(|c| c.body.is_none()) {
-            if let Ok(m) = d.show(&c.id).await {
-                c.body = Some(m.body);
-            }
+            c.body = d.store.get(&c.id).ok().flatten().and_then(|s| s.body);
         }
         c.into_iter()
             .map(|c| {

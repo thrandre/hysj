@@ -27,12 +27,17 @@ pub async fn load(
     };
     if msg.body.is_none() {
         let raw = backend.fetch(&msg.remote_id).await?;
-        let text = body_text(&raw);
-        store.set_body(id, &text)?;
-        store.set_raw(id, &raw)?;
-        msg.body = Some(text);
+        msg.body = Some(keep(store, id, &raw)?);
     }
     Ok(Some(msg))
+}
+
+/// Stores a fetched message (its text and the original); returns the text.
+pub fn keep(store: &mut Store, id: &str, raw: &[u8]) -> Result<String, BackendError> {
+    let text = body_text(raw);
+    store.set_body(id, &text)?;
+    store.set_raw(id, raw)?;
+    Ok(text)
 }
 
 /// The original message: kept from the first view, else fetched again.
