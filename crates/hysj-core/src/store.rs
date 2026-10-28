@@ -856,8 +856,8 @@ impl Store {
     pub fn invites(&self, after: i64) -> Result<Vec<StoredInvite>, StoreError> {
         let mut q = self.db.prepare(&format!(
             "SELECT i.uid, i.sequence, i.summary, i.start, i.end, i.all_day, i.location, i.organizer_name,
-                    i.organizer_addr, i.answer, m.id, coalesce(nullif(m.arrived_on, ''), a.address)
-             FROM invites i JOIN messages m ON {DONE_KEY} = i.message JOIN accounts a ON a.name = m.account
+                    i.organizer_addr, i.answer, messages.id, coalesce(nullif(messages.arrived_on, ''), a.address)
+             FROM invites i JOIN messages ON {DONE_KEY} = i.message JOIN accounts a ON a.name = messages.account
              WHERE i.cancelled = 0 AND i.end > ?1 GROUP BY i.uid ORDER BY i.start"
         ))?;
         let rows = q.query_map([after], |r| {
