@@ -447,7 +447,18 @@ impl Daemon {
         let message_id = self.drop_on_err(&account.name, sent)?;
         tracing::info!(account = %account.name, "sent");
 
-        if let Some(id) = p.reply_to {
+        // A follow-up to your own mail (a nudge) has no card to clear.
+        let ids = self.store.identities().unwrap_or_default();
+        let theirs = p.reply_to.filter(|id| {
+            let from = self
+                .store
+                .get(id)
+                .ok()
+                .flatten()
+                .map(|s| s.summary.from_addr);
+            !from.is_some_and(|f| ids.iter().any(|i| i.address.eq_ignore_ascii_case(&f)))
+        });
+        if let Some(id) = theirs {
             // Already sent: a failure here must not look like a failed send.
             if let Err(e) = self.store.mark_done(&[id]) {
                 tracing::warn!(error = %e, "sent, but clearing the card failed");
@@ -1232,7 +1243,7 @@ async fn waiting(hub: &Hub) -> Result<hysj_proto::Waiting, RpcError> {
             id: m.id.clone(),
             name: name.unwrap_or_else(|| address.clone()),
             address,
-            from: m.arrived_on.clone(),
+            from: m.from_addr.clone(),
             sent: sent_ts,
             subject: m.subject,
             asked,
@@ -1240,9 +1251,32 @@ async fn waiting(hub: &Hub) -> Result<hysj_proto::Waiting, RpcError> {
             words,
         });
     }
+    let items = waiting::first_asks(
+        items,
+        |i| (i.address.to_lowercase(), waiting::bare_subject(&i.subject)),
+        |i| i.sent,
+    );
+    let mut items = items;
     items.sort_by_key(|i| i.due);
     answered.sort_by_key(|a| std::cmp::Reverse(a.ts));
     Ok(hysj_proto::Waiting { items, answered })
+}
+
+/// An https link to a named public host: not this machine, not an IP.
+fn public_host(url: &str) -> bool {
+    let Ok(u) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    let Some(d) = u.host_str().map(str::to_lowercase) else {
+        return false;
+    };
+    u.scheme() == "https"
+        && !d.starts_with('[')
+        && d.parse::<std::net::Ipv4Addr>().is_err()
+        && d.contains('.')
+        && !d.ends_with(".local")
+        && !d.ends_with(".localhost")
+        && !d.ends_with(".internal")
 }
 
 /// Unsubscribes at the source, the best way the sender offers: RFC 8058
@@ -1270,7 +1304,16 @@ async fn unsubscribe(hub: &Hub, address: &str) -> Result<hysj_proto::Unsubscribe
     };
     let result = match &method {
         Method::OneClick(url) => {
-            let resp = reqwest::Client::new()
+            if !public_host(url) {
+                return Err(backend_err(
+                    "the sender's unsubscribe link points somewhere private",
+                ));
+            }
+            let resp = reqwest::Client::builder()
+                // A redirect could lead somewhere private.
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .map_err(|e| backend_err(e.to_string()))?
                 .post(url)
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .body("List-Unsubscribe=One-Click")
@@ -1482,6 +1525,15 @@ async fn dispatch(req: Request, daemon: &mut Daemon, conn: &mut Conn) -> Result<
                 .find(|i| i.invite.uid == p.uid)
                 .ok_or_else(|| RpcError::new(RpcError::NOT_FOUND, "no such invite"))?;
             let i = &stored.invite;
+            // Answer as the address that was invited (an alias, a list's
+            // member), so the organiser's calendar can match it.
+            let ids = daemon.store.identities().map_err(backend_err)?;
+            let me = i
+                .attendees
+                .iter()
+                .find(|a| ids.iter().any(|id| id.address.eq_ignore_ascii_case(a)))
+                .cloned()
+                .unwrap_or_else(|| stored.to.clone());
             let word = match partstat {
                 "ACCEPTED" => "Accepted",
                 "TENTATIVE" => "Tentative",
@@ -1489,13 +1541,13 @@ async fn dispatch(req: Request, daemon: &mut Daemon, conn: &mut Conn) -> Result<
             };
             daemon
                 .send(SendParams {
-                    from: stored.to.clone(),
+                    from: me.clone(),
                     to: vec![i.organizer_addr.clone()],
                     cc: vec![],
                     subject: format!("{word}: {}", i.summary),
                     body: format!("{word}: {}\n", i.summary),
                     reply_to: None,
-                    calendar: Some(hysj_core::invite::reply(i, &stored.to, partstat, now())),
+                    calendar: Some(hysj_core::invite::reply(i, &me, partstat, now())),
                 })
                 .await?;
             daemon
@@ -1756,4 +1808,22 @@ fn now() -> i64 {
 
 fn backend_err(e: impl Display) -> RpcError {
     RpcError::new(RpcError::BACKEND, e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn one_click_only_to_public_hosts() {
+        assert!(super::public_host("https://list.example.com/u?x=1"));
+        for bad in [
+            "http://list.example.com/u",
+            "https://localhost/u",
+            "https://127.0.0.1/u",
+            "https://[::1]/u",
+            "https://printer.local/u",
+            "https://intranet/u",
+        ] {
+            assert!(!super::public_host(bad), "{bad}");
+        }
+    }
 }

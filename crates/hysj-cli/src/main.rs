@@ -32,6 +32,8 @@ enum Cmd {
     Show { id: String },
     /// Ask a question about your mail, answered on this computer.
     Ask { question: Vec<String> },
+    /// Mail you sent that asked for something and has no answer yet.
+    Waiting,
     /// Fetch new mail.
     Sync {
         #[arg(long)]
@@ -226,6 +228,23 @@ async fn cli_main() -> Result<()> {
                 println!("\n{}", a.caveat);
             } else {
                 println!("{}", a.note);
+            }
+        }
+        Cmd::Waiting => {
+            let w: hysj_proto::Waiting = client.call(method::WAITING, ()).await?;
+            if cli.json {
+                println!("{}", serde_json::to_string_pretty(&w)?);
+            } else {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_secs() as i64);
+                for i in &w.items {
+                    let late = if i.due < now { "  LATE" } else { "" };
+                    println!("{}  {}{late}\n  {}", i.id, i.name, i.asked);
+                }
+                if w.items.is_empty() {
+                    println!("Nobody owes you an answer.");
+                }
             }
         }
         Cmd::Sync { account } => {

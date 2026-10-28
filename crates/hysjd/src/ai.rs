@@ -526,16 +526,7 @@ pub async fn ask(hub: &Hub, question: &str) -> hysj_proto::Asked {
     let shown: String = passages
         .iter()
         .enumerate()
-        .map(|(i, p)| {
-            let date =
-                p.ts.and_then(|t| jiff::Timestamp::from_second(t).ok())
-                    .map(|t| t.strftime("%Y-%m-%d").to_string())
-                    .unwrap_or_default();
-            format!(
-                "[{i}] From: {}\nSubject: {}\nDate: {date}\n{}\n\n",
-                p.from, p.subject, p.text
-            )
-        })
+        .map(|(i, p)| format!("[{i}] {}\n", ask::shown(p)))
         .collect();
     let guess = match llm.answer(question, &shown).await {
         Ok(g) => g,

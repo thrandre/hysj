@@ -148,6 +148,29 @@ pub fn due(body: &str, sent: &Zoned) -> (Zoned, Option<String>) {
     (d, None)
 }
 
+/// One item per conversation: a follow-up (a nudge, a second ask) to the
+/// same person about the same thing joins the first, which sets the date.
+pub fn first_asks<T, K: std::hash::Hash + Eq>(
+    items: Vec<T>,
+    key: impl Fn(&T) -> K,
+    sent: impl Fn(&T) -> i64,
+) -> Vec<T> {
+    let mut first: std::collections::HashMap<K, T> = std::collections::HashMap::new();
+    for i in items {
+        match first.entry(key(&i)) {
+            std::collections::hash_map::Entry::Occupied(mut e) => {
+                if sent(&i) < sent(e.get()) {
+                    e.insert(i);
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(i);
+            }
+        }
+    }
+    first.into_values().collect()
+}
+
 /// "Re: Fwd: Budget" → "budget", for matching a reply to what you sent.
 pub fn bare_subject(s: &str) -> String {
     let mut s = s.trim();
@@ -197,5 +220,14 @@ mod tests {
         assert_eq!((d.date().to_string(), w), ("2026-10-27".into(), None));
         assert_eq!(due("on standby friday?", &sent).1, None);
         assert_eq!(bare_subject("SV: Re: Budget"), "budget");
+        // Your nudge doesn't become a second item.
+        let asks = vec![
+            ("ingrid", "Re: Budget", 20),
+            ("ingrid", "Budget", 10),
+            ("jonas", "Tau", 15),
+        ];
+        let mut kept = first_asks(asks, |a| (a.0, bare_subject(a.1)), |a| a.2);
+        kept.sort_by_key(|a| a.2);
+        assert_eq!(kept, [("ingrid", "Budget", 10), ("jonas", "Tau", 15)]);
     }
 }

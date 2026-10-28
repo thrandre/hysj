@@ -216,7 +216,7 @@ const MIGRATIONS: &[&str] = &[
          uid TEXT PRIMARY KEY, message TEXT NOT NULL, sequence INTEGER NOT NULL, summary TEXT NOT NULL,
          start INTEGER NOT NULL, end INTEGER NOT NULL, all_day INTEGER NOT NULL, location TEXT NOT NULL,
          organizer_name TEXT NOT NULL, organizer_addr TEXT NOT NULL, cancelled INTEGER NOT NULL DEFAULT 0,
-         answer TEXT);",
+         answer TEXT, attendees TEXT NOT NULL DEFAULT '');",
 ];
 
 /// SQL for a message's key in the `done` table.
@@ -856,7 +856,8 @@ impl Store {
     pub fn invites(&self, after: i64) -> Result<Vec<StoredInvite>, StoreError> {
         let mut q = self.db.prepare(&format!(
             "SELECT i.uid, i.sequence, i.summary, i.start, i.end, i.all_day, i.location, i.organizer_name,
-                    i.organizer_addr, i.answer, messages.id, coalesce(nullif(messages.arrived_on, ''), a.address)
+                    i.organizer_addr, i.answer, messages.id, coalesce(nullif(messages.arrived_on, ''), a.address),
+                    i.attendees
              FROM invites i JOIN messages ON {DONE_KEY} = i.message JOIN accounts a ON a.name = messages.account
              WHERE i.cancelled = 0 AND i.end > ?1 GROUP BY i.uid ORDER BY i.start"
         ))?;
@@ -873,6 +874,12 @@ impl Store {
                     location: r.get(6)?,
                     organizer_name: r.get(7)?,
                     organizer_addr: r.get(8)?,
+                    attendees: r
+                        .get::<_, String>(12)?
+                        .split(',')
+                        .filter(|a| !a.is_empty())
+                        .map(str::to_string)
+                        .collect(),
                 },
                 answer: r.get(9)?,
                 message: r.get::<_, i64>(10)?.to_string(),
@@ -942,15 +949,23 @@ impl Store {
             let Some(unsub) = text("List-Unsubscribe") else {
                 continue;
             };
+            let mut method =
+                crate::cleanup::Method::parse(&unsub, text("List-Unsubscribe-Post").as_deref());
+            // RFC 8058: one click only for mail that passed DKIM/DMARC for
+            // its sender (the receiving server's verdict); else a forged
+            // "newsletter" could make us POST to any address. Its page instead.
+            let domain = address.rsplit_once('@').map_or("", |(_, d)| d);
+            if let crate::cleanup::Method::OneClick(u) = &method
+                && !crate::extract::authenticated(&headers, domain)
+            {
+                method = crate::cleanup::Method::Web(u.clone());
+            }
             out.push(crate::cleanup::Bulk {
                 address,
                 name,
                 date,
                 opened,
-                method: crate::cleanup::Method::parse(
-                    &unsub,
-                    text("List-Unsubscribe-Post").as_deref(),
-                ),
+                method,
             });
         }
         Ok(out)
@@ -1573,17 +1588,19 @@ impl Store {
                     // keeps your answer; a cancellation marks it.
                     tx.execute(
                         "INSERT INTO invites (uid, message, sequence, summary, start, end, all_day, location,
-                                              organizer_name, organizer_addr, cancelled)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                                              organizer_name, organizer_addr, cancelled, attendees)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                          ON CONFLICT (uid) DO UPDATE SET
                              message = excluded.message, sequence = excluded.sequence, summary = excluded.summary,
                              start = excluded.start, end = excluded.end, all_day = excluded.all_day,
                              location = excluded.location, cancelled = excluded.cancelled,
+                             attendees = excluded.attendees,
                              answer = CASE WHEN excluded.start != invites.start THEN NULL ELSE invites.answer END
                          WHERE excluded.sequence >= invites.sequence",
                         params![
                             i.uid, p.key, i.sequence, i.summary, i.start, i.end, i.all_day, i.location,
-                            i.organizer_name, i.organizer_addr, i.method == "CANCEL"
+                            i.organizer_name, i.organizer_addr, i.method == "CANCEL",
+                            i.attendees.join(",")
                         ],
                     )?;
                 }

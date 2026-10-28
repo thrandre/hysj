@@ -18,6 +18,8 @@ pub struct Invite {
     pub location: String,
     pub organizer_name: String,
     pub organizer_addr: String,
+    /// Who's invited (addresses): you answer as the one that's yours.
+    pub attendees: Vec<String>,
 }
 
 /// Lines with folded continuations joined.
@@ -111,6 +113,7 @@ pub fn parse(ics: &str) -> Option<Invite> {
                 inv.end = time(&params, value.trim())?.0;
                 end_seen = true;
             }
+            ("ATTENDEE", true) => inv.attendees.push(mailto(&value)),
             ("ORGANIZER", true) => {
                 inv.organizer_addr = mailto(&value);
                 inv.organizer_name = params
@@ -255,6 +258,12 @@ mod tests {
         assert_eq!(utc(i.start), "20261029T163000Z");
         assert_eq!(i.end - i.start, 3600);
         assert_eq!(i.sequence, 2);
+        let with = parse(&ICS.replace(
+            "END:VEVENT",
+            "ATTENDEE;CN=Kai;PARTSTAT=NEEDS-ACTION:mailto:Kai.Alias@Example.com\r\nEND:VEVENT",
+        ))
+        .unwrap();
+        assert_eq!(with.attendees, ["kai.alias@example.com"]);
         assert!(parse(&ICS.replace("METHOD:REQUEST", "METHOD:PUBLISH")).is_none());
         let all_day = parse(
             &ICS.replace(

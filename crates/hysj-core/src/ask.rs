@@ -160,17 +160,15 @@ pub fn check(g: &Guess, passages: &[Passage]) -> Option<Checked> {
     if sources.iter().any(|&i| i >= passages.len()) {
         return None;
     }
-    let cited: String = sources
-        .iter()
-        .map(|&i| format!("{}\n{}\n", passages[i].subject, passages[i].text))
-        .collect();
+    let cited: String = sources.iter().map(|&i| shown(&passages[i])).collect();
     let hay = squash(&cited).to_lowercase();
-    // Every token with a digit in it: amounts, dates, codes, passwords.
+    // Every token with a digit in it (amounts, dates, codes, passwords),
+    // written as a whole: "279" isn't in "2799".
     let tokens_ok = answer
         .split_whitespace()
         .map(|t| t.trim_matches(|c: char| !c.is_alphanumeric()))
         .filter(|t| t.chars().any(|c| c.is_ascii_digit()))
-        .all(|t| hay.contains(&t.to_lowercase()));
+        .all(|t| whole(&hay, &t.to_lowercase()));
     let quotes_ok = quoted_spans(answer).all(|q| hay.contains(&squash(q).to_lowercase()));
     if !tokens_ok || !quotes_ok {
         return None;
@@ -181,6 +179,35 @@ pub fn check(g: &Guess, passages: &[Passage]) -> Option<Checked> {
         text: answer.to_string(),
         sources,
         quoted,
+    })
+}
+
+/// A passage as the model sees it, and as its answer is checked against:
+/// who, what, when, then the text.
+pub fn shown(p: &Passage) -> String {
+    let date =
+        p.ts.and_then(|t| jiff::Timestamp::from_second(t).ok())
+            .map(|t| {
+                let z = t.to_zoned(jiff::tz::TimeZone::system());
+                format!(
+                    "{} ({})",
+                    z.strftime("%A %-d %B %Y"),
+                    z.strftime("%Y-%m-%d")
+                )
+            })
+            .unwrap_or_default();
+    format!(
+        "From: {}\nSubject: {}\nDate: {date}\n{}\n",
+        p.from, p.subject, p.text
+    )
+}
+
+/// `needle` in `hay` with no letter or digit right before or after it.
+fn whole(hay: &str, needle: &str) -> bool {
+    hay.match_indices(needle).any(|(at, _)| {
+        let before = hay[..at].chars().next_back();
+        let after = hay[at + needle.len()..].chars().next();
+        !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
     })
 }
 
