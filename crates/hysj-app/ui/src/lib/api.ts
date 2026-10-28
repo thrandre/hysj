@@ -5,6 +5,7 @@
 import type {
   Account,
   AccountAddParams,
+  Asked,
   AiSettings,
   BookingItem,
   Bucket,
@@ -68,6 +69,8 @@ export const api = {
   accountOAuth: (address: string) => call<Account>('account_oauth', { address }),
   openLink: (url: string) => call<null>('open_link', { url }),
   search: (query: string) => call<Found[]>('search', { query }),
+  /** Ask your mail: answered on this computer; takes seconds. */
+  ask: (question: string) => call<Asked>('ask', { question }),
   digestEdition: (pick: number) => call<Edition>('digest_edition', { pick }),
   digestSet: (key: string, on: boolean) => call<null>('digest_set', { key, on }),
   kindCorrect: (record: string, kind: string) => call<null>('kind_correct', { record, kind }),

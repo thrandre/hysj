@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Bumped on any incompatible change to the types below.
-pub const PROTOCOL_VERSION: u32 = 26;
+pub const PROTOCOL_VERSION: u32 = 27;
 
 // --- JSON-RPC 2.0 envelopes -------------------------------------------------
 
@@ -141,6 +141,8 @@ pub mod method {
     pub const MESSAGE_ATTACHMENT: &str = "message/attachment";
     /// Search mail on the server, older mail included.
     pub const SEARCH: &str = "search";
+    /// A question about your mail, answered on this computer from the mail kept here.
+    pub const ASK: &str = "ask";
     /// A Digest delivery as a short read: stories built from the mail in it.
     pub const DIGEST_EDITION: &str = "digest/edition";
     /// Whether the on-device AI runs; with params, turn it on or off first.
@@ -902,6 +904,31 @@ pub struct Ending {
 pub struct SearchParams {
     /// Gmail search syntax on Gmail (`from:aisha before:2025/01/01`), words elsewhere.
     pub query: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct AskParams {
+    pub question: String,
+}
+
+/// What "Ask your mail" found: an answer (checked against its sources) or
+/// a note saying why there's none.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct Asked {
+    pub answer: Option<Answer>,
+    /// "I couldn't find that in your mail.", or why it couldn't look.
+    pub note: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct Answer {
+    pub text: String,
+    /// "Quoted exactly from the email." / "Summarised from 2 emails — …"
+    pub caveat: String,
+    pub sources: Vec<Found>,
 }
 
 /// A message found on the server. Not kept: its id (`found:<account>|<remote id>`)

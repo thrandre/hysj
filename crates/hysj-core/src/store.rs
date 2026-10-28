@@ -737,6 +737,24 @@ impl Store {
             .optional()
     }
 
+    /// Every kept mail with its text, for Ask your mail (blocked mail left out).
+    pub fn searchable(&self) -> Result<Vec<crate::ask::Doc>, StoreError> {
+        let mut q = self.db.prepare(
+            "SELECT id, coalesce(from_name, from_addr), subject, date, text FROM messages
+             JOIN bodies ON bodies.message = messages.id WHERE bucket != 'blocked'",
+        )?;
+        let rows = q.query_map([], |r| {
+            Ok(crate::ask::Doc {
+                id: r.get::<_, i64>(0)?.to_string(),
+                from: r.get(1)?,
+                subject: r.get(2)?,
+                ts: r.get(3)?,
+                body: r.get(4)?,
+            })
+        })?;
+        rows.collect()
+    }
+
     /// Mail you sent, newest first, with recipients filled in.
     /// ponytail: only what's in the synced mailbox (Gmail All Mail has it; generic
     /// IMAP syncs INBOX, so its Sent shows little until Sent is synced too).

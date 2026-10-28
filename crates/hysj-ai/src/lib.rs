@@ -212,6 +212,59 @@ impl Llm {
     }
 }
 
+impl Llm {
+    /// Search words for a question about the reader's mail, in English and
+    /// Norwegian (the mail is both), so "cabin wifi" also finds "hytta".
+    pub async fn terms(&self, question: &str) -> Result<Vec<String>> {
+        let schema = json!({
+            "type": "object",
+            "properties": {"terms": {"type": "array", "items": {"type": "string", "maxLength": 30}, "maxItems": 10}},
+            "required": ["terms"],
+            "additionalProperties": false
+        });
+        #[derive(Deserialize)]
+        struct Terms {
+            terms: Vec<String>,
+        }
+        let t: Terms = self.ask(TERMS, question, schema, 120, 0.0).await?;
+        Ok(t.terms)
+    }
+
+    /// An answer to `question` from `passages` only (numbered from 0).
+    pub async fn answer(&self, question: &str, passages: &str) -> Result<AnswerGuess> {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "found": {"type": "boolean"},
+                "answer": {"type": "string", "maxLength": 300},
+                "sources": {"type": "array", "items": {"type": "integer", "minimum": 0}, "maxItems": 4},
+                "quote": {"type": "string", "maxLength": 160}
+            },
+            "required": ["found", "answer", "sources", "quote"],
+            "additionalProperties": false
+        });
+        let user = format!(
+            "{passages}
+
+Question: {question}"
+        );
+        self.ask(ANSWER, &user, schema, 260, 0.0).await
+    }
+}
+
+/// The model's answer to a question about the reader's mail, checked by
+/// `hysj_core::ask::check` before it's shown.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AnswerGuess {
+    pub found: bool,
+    pub answer: String,
+    pub sources: Vec<usize>,
+    pub quote: String,
+}
+
+const TERMS: &str = "The reader is searching their own email, which is in English and Norwegian. Give up to 10 single search words that would appear in the email that answers the question: the important nouns and names, each in both English and Norwegian (e.g. cabin, hytte, hytta, wifi, passord, password). Lower case. No question words. Answer as JSON.";
+const ANSWER: &str = "You answer the reader's question about their own email, using ONLY the numbered emails given. Answer in one or two short, complete sentences (never a bare value) in the question's language, addressed to the reader as \"you\". Copy names, numbers, amounts, dates, codes and passwords exactly as written in the email; never work out, convert or guess one. List the numbers of the emails you used as sources. If the answer is a short piece of text from an email (a password, a code, an address), put it word for word in quote; else leave quote empty. If the emails do not answer the question, set found to false and leave answer empty. Answer as JSON.";
+
 const ISSUE: &str = "This is one issue of a newsletter. Write ONE sentence in English (max 25 words) saying what it is about, like a teaser in a newspaper: the main story or topic, with its specifics. Never tell the reader what to do (no \"please\", \"you should\", \"read\", \"explore\"), and never describe the email or its sender (no \"this newsletter\", \"the sender\"). Set offer to true if the email is mainly selling something: a subscription deal, a discount, a sale or a product launch. Answer as JSON.";
 const GIST: &str = "You summarise one email for its reader. Write ONE short sentence in English (max 25 words) saying what the sender wants from the reader or tells them. Address the reader as \"you\", never by name. Do not repeat the subject line; say what is actually in the email. No greeting. If the email is empty or unclear, set confidence below 0.5. Answer as JSON.";
 const REPLIES: &str = "You are the person who RECEIVED this email. Suggest up to two very short replies (max 8 words each) you could send back to the sender, in the email's language. Never sign as the sender. If no reply makes sense, return an empty list. Answer as JSON.";

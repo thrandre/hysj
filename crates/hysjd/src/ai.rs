@@ -365,20 +365,48 @@ pub async fn on_battery_power() -> bool {
         .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("'Battery Power'"))
 }
 
+/// The loaded model, shared by the background passes and Ask your mail
+/// (one copy in memory). Apart from the daemon's lock: inference is slow.
+#[derive(Default)]
+pub struct Slot {
+    pub llm: Option<Llm>,
+    /// Last used (by a pass or a question), for unloading when idle.
+    pub used: Option<std::time::Instant>,
+}
+
+impl Slot {
+    /// The model `choice`, loaded if it isn't.
+    pub async fn get(&mut self, choice: Choice) -> anyhow::Result<&Llm> {
+        if self.llm.as_ref().is_some_and(|l| l.choice != choice) {
+            self.llm = None;
+        }
+        if self.llm.is_none() {
+            tracing::info!(
+                model = choice.version(),
+                "loading the local model (downloads once on first use)"
+            );
+            self.llm = Some(Llm::load(choice).await?);
+        }
+        self.used = Some(std::time::Instant::now());
+        Ok(self.llm.as_ref().expect("loaded above"))
+    }
+}
+
 pub async fn run(hub: Arc<Hub>) {
     // Offline runs (screenshots, store copies) never load a model.
     if std::env::var_os("HYSJ_NO_SYNC").is_some() || std::env::var_os("HYSJ_NO_AI").is_some() {
         return;
     }
-    let mut llm: Option<Llm> = None;
     let mut sorter: Option<crate::kinds::Sorter> = None;
-    let mut last_work = std::time::Instant::now();
     let mut waiting_for_power = false;
     refresh_apple().await;
     loop {
-        if llm.is_some() && last_work.elapsed() > IDLE {
-            tracing::info!("model idle; unloading");
-            llm = None;
+        {
+            let mut slot = hub.llm.lock().await;
+            if slot.llm.is_some() && slot.used.is_some_and(|u| u.elapsed() > IDLE) {
+                tracing::info!("model idle; unloading");
+                slot.llm = None;
+            }
         }
         // Turned off in Settings: rules only, and the memory back. On
         // battery it waits for the charger unless the reader said otherwise
@@ -392,10 +420,6 @@ pub async fn run(hub: Arc<Hub>) {
             )
         };
         let model = choice.version();
-        // Switched in Settings: the other model loads on the next pass.
-        if llm.as_ref().is_some_and(|l| l.choice != choice) {
-            llm = None;
-        }
         // Every model, Apple's too, and every kind of summary waits here.
         let paused = !on_battery && on_battery_power().await;
         if paused != waiting_for_power {
@@ -411,7 +435,7 @@ pub async fn run(hub: Arc<Hub>) {
             );
         }
         if !enabled || paused {
-            llm = None;
+            hub.llm.lock().await.llm = None;
             tokio::time::sleep(EVERY).await;
             continue;
         }
@@ -433,19 +457,19 @@ pub async fn run(hub: Arc<Hub>) {
             }
         }
         if has_work(&hub, model).await {
-            last_work = std::time::Instant::now();
-            if llm.is_none() {
-                tracing::info!(
-                    model,
-                    "loading the local model (downloads once on first use)"
-                );
-                match Llm::load(choice).await {
-                    Ok(l) => llm = Some(l),
-                    Err(e) => tracing::warn!(error = %e, "model unavailable; trying again later"),
+            // ponytail: held for the whole pass (BATCH mails), so a question
+            // can wait one pass; lock per answer if that's felt.
+            let mut slot = hub.llm.lock().await;
+            let loaded = match slot.get(choice).await {
+                Ok(l) => Some(l),
+                Err(e) => {
+                    tracing::warn!(error = %e, "model unavailable; trying again later");
+                    None
                 }
-            }
-            if let Some(l) = &llm {
+            };
+            if let Some(l) = loaded {
                 let n = pass(&hub, l, model).await;
+                drop(slot);
                 tracing::info!(stored = n, "model pass");
                 if n > 0 {
                     continue; // more work may be waiting
@@ -456,5 +480,109 @@ pub async fn run(hub: Arc<Hub>) {
             continue;
         }
         tokio::time::sleep(EVERY).await;
+    }
+}
+
+/// Ask your mail: the passages that may hold the answer, the model's answer
+/// from them, and the checks that keep a made-up number or quote from
+/// being shown. Never under the daemon's lock while the model works.
+pub async fn ask(hub: &Hub, question: &str) -> hysj_proto::Asked {
+    use hysj_core::ask;
+    let none = |note: &str| hysj_proto::Asked {
+        answer: None,
+        note: note.into(),
+    };
+    // Asked before the first check (just started, or offline): ask now, or
+    // the choice falls back to a model that may need downloading.
+    if APPLE.read().expect("not poisoned").is_none() {
+        refresh_apple().await;
+    }
+    let (enabled, choice, docs) = {
+        let d = hub.daemon.lock().await;
+        (
+            d.store.ai_enabled().unwrap_or(true),
+            chosen(&d.store),
+            d.store.searchable().unwrap_or_default(),
+        )
+    };
+    if !enabled || std::env::var_os("HYSJ_NO_AI").is_some() {
+        return none("Turn on the on-device AI in Settings to ask your mail.");
+    }
+    let mut slot = hub.llm.lock().await;
+    let llm = match slot.get(choice).await {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::warn!(error = %e, "model unavailable for a question");
+            return none("The on-device AI isn’t ready yet. Try again in a moment.");
+        }
+    };
+    let mut terms = llm.terms(question).await.unwrap_or_default();
+    terms.extend(ask::question_terms(question));
+    let passages = ask::retrieve(&docs, &terms);
+    let not_found = "I couldn’t find that in your mail.";
+    if passages.is_empty() {
+        return none(not_found);
+    }
+    let shown: String = passages
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let date =
+                p.ts.and_then(|t| jiff::Timestamp::from_second(t).ok())
+                    .map(|t| t.strftime("%Y-%m-%d").to_string())
+                    .unwrap_or_default();
+            format!(
+                "[{i}] From: {}\nSubject: {}\nDate: {date}\n{}\n\n",
+                p.from, p.subject, p.text
+            )
+        })
+        .collect();
+    let guess = match llm.answer(question, &shown).await {
+        Ok(g) => g,
+        Err(e) => {
+            tracing::warn!(error = %e, "no answer from the model");
+            return none(not_found);
+        }
+    };
+    drop(slot);
+    let checked = ask::check(
+        &ask::Guess {
+            found: guess.found,
+            answer: &guess.answer,
+            sources: &guess.sources,
+            quote: &guess.quote,
+        },
+        &passages,
+    );
+    // Never the question or the answer: the log must not hold mail content.
+    tracing::info!(
+        passages = passages.len(),
+        answered = checked.is_some(),
+        "question"
+    );
+    let Some(c) = checked else {
+        return none(not_found);
+    };
+    let d = hub.daemon.lock().await;
+    let sources = c
+        .sources
+        .iter()
+        .filter_map(|&i| d.store.get(&passages[i].id).ok().flatten())
+        .map(|s| hysj_proto::Found {
+            id: s.summary.id,
+            account: s.summary.account,
+            from: s.summary.from,
+            from_addr: s.summary.from_addr,
+            subject: s.summary.subject,
+            ts: s.summary.ts,
+        })
+        .collect();
+    hysj_proto::Asked {
+        answer: Some(hysj_proto::Answer {
+            caveat: ask::caveat(&c),
+            text: capitalized(&c.text),
+            sources,
+        }),
+        note: String::new(),
     }
 }

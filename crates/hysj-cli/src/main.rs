@@ -30,6 +30,8 @@ enum Cmd {
     },
     /// Show one message.
     Show { id: String },
+    /// Ask a question about your mail, answered on this computer.
+    Ask { question: Vec<String> },
     /// Fetch new mail.
     Sync {
         #[arg(long)]
@@ -203,6 +205,27 @@ async fn cli_main() -> Result<()> {
                     s.reason.text(),
                     m.body
                 );
+            }
+        }
+        Cmd::Ask { question } => {
+            let a: hysj_proto::Asked = client
+                .call(
+                    method::ASK,
+                    hysj_proto::AskParams {
+                        question: question.join(" "),
+                    },
+                )
+                .await?;
+            if cli.json {
+                println!("{}", serde_json::to_string_pretty(&a)?);
+            } else if let Some(a) = &a.answer {
+                println!("{}\n", a.text);
+                for s in &a.sources {
+                    println!("  {}  {} · {}", s.id, s.from, s.subject);
+                }
+                println!("\n{}", a.caveat);
+            } else {
+                println!("{}", a.note);
             }
         }
         Cmd::Sync { account } => {

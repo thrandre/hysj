@@ -1,10 +1,16 @@
 <script lang="ts">
-  import { app, perform } from '../lib/app.svelte.ts';
-  import { hits, matches, suggestions } from '../lib/hits.ts';
-  import { firstName } from '../lib/words.ts';
+  import { app, perform, toggle } from '../lib/app.svelte.ts';
+  import { api } from '../lib/api.ts';
+  import { hits, isQuestion, matches, suggestions } from '../lib/hits.ts';
+  import { shortMonth } from '../lib/findit.ts';
+  import type { Asked } from '../lib/types.ts';
+  import { firstName, subject } from '../lib/words.ts';
+  import Inline from './Inline.svelte';
 
   let query = $state('');
   let at = $state(0);
+  /** Ask your mail: the question asked, and its answer once it's in. */
+  let asked = $state<{ q: string; a: Asked | null } | null>(null);
   let input: HTMLInputElement | undefined = $state();
 
   const now = () => Date.now() / 1000;
@@ -12,6 +18,7 @@
   let results = $derived(
     query.trim() && app.data
       ? [
+          ...(isQuestion(query) && asked?.q !== query.trim() ? [{ kind: 'Ask', label: `Ask your mail: “${query.trim()}”`, hint: 'answered on this computer, only from your own mail', go: { ask: query.trim() } }] : []),
           ...hits(app.data, now())
             .filter((h) => matches(query, `${h.kind} ${h.label} ${h.hint}`))
             .slice(0, 5),
@@ -38,9 +45,38 @@
   function run(i: number) {
     const h = results[i];
     if (!h) return;
+    if ('ask' in h.go) return void ask(h.go.ask);
     query = '';
     perform(h.go);
   }
+
+  $effect(() => {
+    if (asked && asked.q !== query.trim()) asked = null;
+  });
+  // A question ending in "?" is asked once typing stops; others on Enter.
+  $effect(() => {
+    const q = query.trim();
+    if (!q.endsWith('?') || asked?.q === q) return;
+    const t = setTimeout(() => ask(q), 700);
+    return () => clearTimeout(t);
+  });
+
+  async function ask(q: string) {
+    asked = { q, a: null };
+    let a: Asked;
+    try {
+      a = await api.ask(q);
+    } catch (e) {
+      a = { answer: null, note: `Couldn’t ask: ${e}` };
+    }
+    if (asked?.q === q) asked = { q, a };
+  }
+
+  const day = (ts: bigint | number | null) => {
+    if (ts == null) return '';
+    const d = new Date(Number(ts) * 1000);
+    return `${d.getDate()} ${shortMonth(d)}`;
+  };
 
   function keys(e: KeyboardEvent) {
     if (e.key === 'Enter') run(at);
@@ -88,6 +124,32 @@
     </div>
   {/if}
 {:else}
+  {#if asked}
+    <div class="answer card" role="region" aria-label="Answer" aria-live="polite" aria-busy={!asked.a}>
+      {#if !asked.a}
+        <span class="note">Answer · looking through your mail on this computer…</span>
+        <span class="thinking" aria-hidden="true"></span>
+      {:else if asked.a.answer}
+        {@const a = asked.a.answer}
+        <span class="note">Answer · from {a.sources.length === 1 ? '1 email' : `${a.sources.length} emails`} · worked out on this computer</span>
+        <p class="text">{a.text}</p>
+        <div class="sources">
+          {#each a.sources as s (s.id)}
+            <button class="source" aria-expanded={app.open === s.id} onclick={() => toggle(s.id)}
+              ><strong>{s.from}</strong><span>{subject(s.subject)} · {day(s.ts)}</span></button
+            >
+          {/each}
+        </div>
+        {#each a.sources as s (s.id)}
+          {#if app.open === s.id}<Inline id={s.id} />{/if}
+        {/each}
+        <span class="note">{a.caveat}</span>
+      {:else}
+        <p class="text none-found">{asked.a.note}</p>
+        <span class="note">Hysj only answers from mail on this computer, and never guesses.</span>
+      {/if}
+    </div>
+  {/if}
   <div class="results card" id="cmd-results" role="listbox" aria-label="Results">
     {#each results as h, i (h.kind + h.label + i)}
       <button class="hit" class:at={i === at} role="option" aria-selected={i === at} onclick={() => run(i)} onmouseenter={() => (at = i)}>
@@ -138,6 +200,65 @@
     flex-wrap: wrap;
     gap: 8px;
     margin-top: 14px;
+  }
+  .answer {
+    margin-top: 14px;
+    padding: 20px 22px;
+    border-radius: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .answer .note {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .text {
+    margin: 0;
+    font-size: 19px;
+    line-height: 1.5;
+    color: var(--ink);
+  }
+  .none-found {
+    font-size: 17px;
+    color: var(--body);
+  }
+  .sources {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .source {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--field);
+    font-size: 13px;
+  }
+  .source span {
+    color: var(--secondary);
+  }
+  .thinking {
+    width: 120px;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--field) 0%, var(--raised) 50%, var(--field) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+  }
+  @keyframes shimmer {
+    to {
+      background-position: -200% 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .thinking {
+      animation: none;
+    }
   }
   .results {
     margin-top: 14px;

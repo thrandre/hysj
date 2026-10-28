@@ -292,6 +292,19 @@ async fn search(b: State<'_, Bridge>, query: String) -> Res<Vec<hysj_proto::Foun
         .await
 }
 
+/// On a connection of its own: an answer takes seconds, and the app's other
+/// requests mustn't queue behind it.
+#[tauri::command]
+async fn ask(question: String) -> Res<hysj_proto::Asked> {
+    let mut client = hysjd::socket::client(None)
+        .await
+        .map_err(|e| e.to_string())?;
+    client
+        .call(method::ASK, hysj_proto::AskParams { question })
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn digest_edition(b: State<'_, Bridge>, pick: u8) -> Res<hysj_proto::Edition> {
     b.call(method::DIGEST_EDITION, hysj_proto::EditionParams { pick })
@@ -463,6 +476,7 @@ fn main() {
         .manage(Bridge(Mutex::new(None)))
         .manage(update::Pending::default())
         .invoke_handler(tauri::generate_handler![
+            ask,
             account_list,
             identity_list,
             contact_list,

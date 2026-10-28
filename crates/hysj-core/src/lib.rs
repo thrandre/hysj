@@ -1,6 +1,7 @@
 //! Models, store, sync logic and client plumbing shared by the daemon and its
 //! clients. No UI and no network-library types in here.
 
+pub mod ask;
 pub mod backend;
 pub mod classify;
 pub mod client;

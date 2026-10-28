@@ -85,6 +85,20 @@ export async function mock(name: string, args: Record<string, unknown>): Promise
     },
     message_view: () => mockView(String(args.id)),
     search: () => [],
+    // Ask your mail: one invented answer, after a model-like pause.
+    ask: () =>
+      new Promise((r) => setTimeout(r, 1500)).then(() =>
+        /wifi|wi-fi|hytta|cabin/i.test(String(args.question))
+          ? {
+              answer: {
+                text: 'The cabin wifi is “Hytta-5G” and the password is fjell-og-fjord-24.',
+                caveat: 'Quoted exactly from the email.',
+                sources: [{ id: s.people[0]?.id ?? '1', account: 'personal', from: 'Pappa', from_addr: 'pappa@example.com', subject: 'Hytta: ny ruter', ts: Date.now() / 1000 - 120 * 86400 }],
+              },
+              note: '',
+            }
+          : { answer: null, note: 'I couldn’t find that in your mail.' },
+      ),
     // A real dump may carry editions (pick 0–3); else the synthetic one.
     digest_edition: () => (s as Snapshot & { editions?: unknown[] }).editions?.[Number(args.pick)] ?? fixtureEdition(),
   };

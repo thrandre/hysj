@@ -13,6 +13,7 @@ export type Go =
   | { compose: string }
   | { sync: true }
   | { search: string }
+  | { ask: string }
   | { account: string | null };
 
 export interface Hit {
@@ -20,6 +21,19 @@ export interface Hit {
   label: string;
   hint: string;
   go: Go;
+}
+
+const QUESTION_WORDS = new Set(
+  "what what's whats when where where's who who's how which why did do does is are was can hva hvem hvor hvordan hvilken hvilke hvorfor når har er kan".split(' '),
+);
+
+/** A question for Ask your mail, not a command: ends in "?" or starts with a
+ * question word (as `hysj_core::ask::is_question`). */
+export function isQuestion(q: string): boolean {
+  const t = q.trim();
+  if (t.endsWith('?')) return true;
+  const ws = t.split(/\s+/);
+  return ws.length >= 3 && QUESTION_WORDS.has(ws[0].toLowerCase().replace('’', "'"));
 }
 
 /** Every word of the query appears in the text. */

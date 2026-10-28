@@ -771,6 +771,8 @@ pub struct Hub {
     /// Microsoft sign-ins waiting for the browser, by address. Apart from the
     /// daemon's lock: waiting for a person must not stop the mail.
     oauth: tokio::sync::Mutex<HashMap<String, oauth::Pending>>,
+    /// The local model, when loaded (see `ai::Slot`).
+    pub llm: tokio::sync::Mutex<ai::Slot>,
 }
 
 impl Hub {
@@ -782,6 +784,7 @@ impl Hub {
             apps: AtomicUsize::new(0),
             sync_paused: std::sync::atomic::AtomicBool::new(false),
             oauth: tokio::sync::Mutex::new(HashMap::new()),
+            llm: tokio::sync::Mutex::new(ai::Slot::default()),
         })
     }
 
@@ -980,6 +983,11 @@ async fn handle(raw: &str, hub: &Hub, conn: &mut Conn) -> Response {
         // Waits on mail servers: the lock only around the store (Hub::sync).
         method::SYNC if conn.greeted => match params::<SyncParams>(req.params) {
             Ok(p) => hub.sync(p.account).await.and_then(to_value),
+            Err(e) => Err(e),
+        },
+        // Waits on the local model: never under the daemon's lock.
+        method::ASK if conn.greeted => match params::<hysj_proto::AskParams>(req.params) {
+            Ok(p) => to_value(ai::ask(hub, &p.question).await),
             Err(e) => Err(e),
         },
         _ => dispatch(req, &mut *hub.daemon.lock().await, conn).await,
