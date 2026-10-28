@@ -26,6 +26,7 @@ import type {
   ProviderInfo,
   Unsubscribed,
   Waiting,
+  InviteItem,
   ScreenerDecided,
   SendParams,
   SendResult,
@@ -80,6 +81,10 @@ export const api = {
   cleanupKeep: (address: string, keep: boolean) => call<null>('cleanup_keep', { address, keep }),
   pileArchive: () => call<number>('pile_archive'),
   waiting: () => call<Waiting>('waiting'),
+  calendar: () => call<InviteItem[]>('calendar'),
+  inviteAnswer: (uid: string, answer: 'accepted' | 'tentative' | 'declined') => call<null>('invite_answer', { uid, answer }),
+  /** Opens it in the Calendar app, which asks where to add it. */
+  calendarAdd: (ev: { invite?: string; booking?: string }) => call<null>('calendar_add', { invite: ev.invite ?? null, booking: ev.booking ?? null }),
   waitingSet: (id: string, state: 'later' | 'stop' | 'active', until: number | null = null) => call<null>('waiting_set', { id, state, until }),
   digestEdition: (pick: number) => call<Edition>('digest_edition', { pick }),
   digestSet: (key: string, on: boolean) => call<null>('digest_set', { key, on }),

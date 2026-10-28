@@ -13,4 +13,8 @@ to: Array<string>, cc: Array<string>, subject: string, body: string,
  * Replying to this message (id from `list`): threading headers are added
  * and it is cleared from the Desk once sent.
  */
-reply_to: string | null, };
+reply_to: string | null, 
+/**
+ * An iTIP answer to send with it (set by the daemon for invites).
+ */
+calendar?: string, };

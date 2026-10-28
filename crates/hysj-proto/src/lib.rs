@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Bumped on any incompatible change to the types below.
-pub const PROTOCOL_VERSION: u32 = 29;
+pub const PROTOCOL_VERSION: u32 = 30;
 
 // --- JSON-RPC 2.0 envelopes -------------------------------------------------
 
@@ -155,6 +155,12 @@ pub mod method {
     pub const WAITING: &str = "waiting";
     /// Remind me later, stop waiting, or wait again.
     pub const WAITING_SET: &str = "waiting/set";
+    /// Invites found in your mail, still to come, with clashes.
+    pub const CALENDAR: &str = "calendar";
+    /// Answer an invite (an iTIP reply from the address it came to).
+    pub const INVITE_ANSWER: &str = "calendar/answer";
+    /// An invite or a booking as `.ics` text, for your calendar app.
+    pub const CALENDAR_EVENT: &str = "calendar/event";
     /// A Digest delivery as a short read: stories built from the mail in it.
     pub const DIGEST_EDITION: &str = "digest/edition";
     /// Whether the on-device AI runs; with params, turn it on or off first.
@@ -504,6 +510,10 @@ pub struct SendParams {
     /// and it is cleared from the Desk once sent.
     #[serde(default)]
     pub reply_to: Option<String>,
+    /// An iTIP answer to send with it (set by the daemon for invites).
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub calendar: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1061,4 +1071,42 @@ pub struct WaitingSet {
     /// "later" (until `until`), "stop", or "active".
     pub state: String,
     pub until: Option<i64>,
+}
+
+// --- Calendar ------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct InviteItem {
+    pub uid: String,
+    /// The mail it came in.
+    pub message: String,
+    pub summary: String,
+    pub start: i64,
+    pub end: i64,
+    pub all_day: bool,
+    pub location: String,
+    pub organizer: String,
+    pub organizer_addr: String,
+    /// Your address it came to (the answer goes from it).
+    pub to: String,
+    /// "accepted", "tentative" or "declined"; none yet: waiting for you.
+    pub answer: Option<String>,
+    /// "Clashes with Dinner at Smalhans at 18:00".
+    pub clash: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct InviteAnswer {
+    pub uid: String,
+    pub answer: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct CalendarEvent {
+    /// An invite's uid, or a booking's key.
+    pub invite: Option<String>,
+    pub booking: Option<String>,
 }

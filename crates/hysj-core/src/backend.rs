@@ -82,6 +82,9 @@ pub struct Outgoing {
     pub in_reply_to: Option<String>,
     /// Thread ancestry, oldest first (without `<>`).
     pub references: Vec<String>,
+    /// An iTIP answer to an invite, sent as a `text/calendar; method=REPLY`
+    /// alternative to the text.
+    pub calendar: Option<String>,
 }
 
 /// Tag marking a message the user sent (Gmail system label).

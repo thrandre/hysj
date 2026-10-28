@@ -333,6 +333,51 @@ async fn waiting_set(
 }
 
 #[tauri::command]
+async fn calendar(b: State<'_, Bridge>) -> Res<Vec<hysj_proto::InviteItem>> {
+    b.call(method::CALENDAR, ()).await
+}
+
+#[tauri::command]
+async fn invite_answer(b: State<'_, Bridge>, uid: String, answer: String) -> Res<()> {
+    b.call(
+        method::INVITE_ANSWER,
+        hysj_proto::InviteAnswer { uid, answer },
+    )
+    .await
+}
+
+/// Opens an invite or a booking in the Calendar app (as an .ics file),
+/// which asks which calendar to add it to.
+#[tauri::command]
+async fn calendar_add(
+    b: State<'_, Bridge>,
+    invite: Option<String>,
+    booking: Option<String>,
+) -> Res<()> {
+    let ics: String = b
+        .call(
+            method::CALENDAR_EVENT,
+            hysj_proto::CalendarEvent { invite, booking },
+        )
+        .await?;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let path = std::env::temp_dir().join(format!("hysj-event-{nanos:x}.ics"));
+    std::fs::write(&path, ics).map_err(|e| e.to_string())?;
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(opener)
+        .arg(&path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 async fn cleanup(b: State<'_, Bridge>) -> Res<hysj_proto::Cleanup> {
     b.call(method::CLEANUP, ()).await
 }
@@ -539,6 +584,9 @@ fn main() {
         .manage(update::Pending::default())
         .invoke_handler(tauri::generate_handler![
             ask,
+            calendar,
+            invite_answer,
+            calendar_add,
             cleanup,
             unsubscribe,
             waiting,

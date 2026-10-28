@@ -211,6 +211,12 @@ const MIGRATIONS: &[&str] = &[
      INSERT OR REPLACE INTO meta (key, value) VALUES ('opens_since', unixepoch());",
     // v22: Waiting on others: what you chose per sent mail.
     "CREATE TABLE waiting (key TEXT PRIMARY KEY, state TEXT NOT NULL, until INTEGER);",
+    // v23: calendar invites found in mail, and your answers.
+    "CREATE TABLE invites (
+         uid TEXT PRIMARY KEY, message TEXT NOT NULL, sequence INTEGER NOT NULL, summary TEXT NOT NULL,
+         start INTEGER NOT NULL, end INTEGER NOT NULL, all_day INTEGER NOT NULL, location TEXT NOT NULL,
+         organizer_name TEXT NOT NULL, organizer_addr TEXT NOT NULL, cancelled INTEGER NOT NULL DEFAULT 0,
+         answer TEXT);",
 ];
 
 /// SQL for a message's key in the `done` table.
@@ -232,6 +238,15 @@ pub struct ReplyContext {
     pub message_id: Option<String>,
     /// References for the reply: the original's, plus its Message-ID.
     pub references: Vec<String>,
+}
+
+/// An invite as kept, with your answer ("accepted", "tentative",
+/// "declined"), the mail it came in and the address it came to.
+pub struct StoredInvite {
+    pub invite: crate::invite::Invite,
+    pub answer: Option<String>,
+    pub message: String,
+    pub to: String,
 }
 
 /// A sent mail's Message-ID, and its first recipient's address and name.
@@ -819,10 +834,7 @@ impl Store {
     }
 
     /// A message's Message-ID and its first To recipient (address, name).
-    pub fn first_recipient(
-        &self,
-        id: &str,
-    ) -> Result<Option<FirstRecipient>, StoreError> {
+    pub fn first_recipient(&self, id: &str) -> Result<Option<FirstRecipient>, StoreError> {
         let row: Option<(Option<String>, Vec<u8>)> = self
             .db
             .query_row(
@@ -837,6 +849,45 @@ impl Store {
                 .next()
                 .map(|(a, n)| (mid, a, n))
         }))
+    }
+
+    /// Invites still to come (not cancelled), soonest first, with the id of
+    /// the mail that brought each and the address it came to.
+    pub fn invites(&self, after: i64) -> Result<Vec<StoredInvite>, StoreError> {
+        let mut q = self.db.prepare(&format!(
+            "SELECT i.uid, i.sequence, i.summary, i.start, i.end, i.all_day, i.location, i.organizer_name,
+                    i.organizer_addr, i.answer, m.id, coalesce(nullif(m.arrived_on, ''), a.address)
+             FROM invites i JOIN messages m ON {DONE_KEY} = i.message JOIN accounts a ON a.name = m.account
+             WHERE i.cancelled = 0 AND i.end > ?1 GROUP BY i.uid ORDER BY i.start"
+        ))?;
+        let rows = q.query_map([after], |r| {
+            Ok(StoredInvite {
+                invite: crate::invite::Invite {
+                    method: "REQUEST".into(),
+                    uid: r.get(0)?,
+                    sequence: r.get(1)?,
+                    summary: r.get(2)?,
+                    start: r.get(3)?,
+                    end: r.get(4)?,
+                    all_day: r.get(5)?,
+                    location: r.get(6)?,
+                    organizer_name: r.get(7)?,
+                    organizer_addr: r.get(8)?,
+                },
+                answer: r.get(9)?,
+                message: r.get::<_, i64>(10)?.to_string(),
+                to: r.get(11)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn answer_invite(&self, uid: &str, answer: Option<&str>) -> Result<(), StoreError> {
+        self.db.execute(
+            "UPDATE invites SET answer = ?2 WHERE uid = ?1",
+            params![uid, answer],
+        )?;
+        Ok(())
     }
 
     /// The reader opened this mail in Hysj (Clean up's read counts).
@@ -1515,6 +1566,26 @@ impl Store {
                 Extract::Order(o) => {
                     kind.get_or_insert("structured");
                     merge_order(&tx, o, &p.key, date)?;
+                }
+                Extract::Invite(i) => {
+                    kind.get_or_insert("structured");
+                    // A later version (higher sequence) replaces the event but
+                    // keeps your answer; a cancellation marks it.
+                    tx.execute(
+                        "INSERT INTO invites (uid, message, sequence, summary, start, end, all_day, location,
+                                              organizer_name, organizer_addr, cancelled)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                         ON CONFLICT (uid) DO UPDATE SET
+                             message = excluded.message, sequence = excluded.sequence, summary = excluded.summary,
+                             start = excluded.start, end = excluded.end, all_day = excluded.all_day,
+                             location = excluded.location, cancelled = excluded.cancelled,
+                             answer = CASE WHEN excluded.start != invites.start THEN NULL ELSE invites.answer END
+                         WHERE excluded.sequence >= invites.sequence",
+                        params![
+                            i.uid, p.key, i.sequence, i.summary, i.start, i.end, i.all_day, i.location,
+                            i.organizer_name, i.organizer_addr, i.method == "CANCEL"
+                        ],
+                    )?;
                 }
                 Extract::Listing(l) => {
                     kind.get_or_insert("listing");

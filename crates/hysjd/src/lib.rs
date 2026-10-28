@@ -416,6 +416,7 @@ impl Daemon {
             cc: p.cc,
             subject: p.subject,
             body: p.body,
+            calendar: p.calendar,
             ..Default::default()
         };
         if let Some(id) = &p.reply_to {
@@ -976,6 +977,7 @@ const MUTATING: &[&str] = &[
     method::CLEANUP_KEEP,
     method::PILE_ARCHIVE,
     method::WAITING_SET,
+    method::INVITE_ANSWER,
 ];
 
 async fn handle(raw: &str, hub: &Hub, conn: &mut Conn) -> Response {
@@ -1027,6 +1029,122 @@ async fn handle(raw: &str, hub: &Hub, conn: &mut Conn) -> Response {
         }
         Err(e) => Response::err(Some(id), e),
     }
+}
+
+/// A booking as an event for the calendar (two hours when it has no end).
+fn booking_event(b: &hysj_proto::BookingItem) -> Option<hysj_core::invite::Invite> {
+    let start = b.start_ts?;
+    let all_day = b.start.as_deref().is_some_and(|s| !s.contains('T'));
+    let end = b
+        .end
+        .as_deref()
+        .and_then(hysj_core::store::iso_ts)
+        .filter(|e| *e > start)
+        .unwrap_or(start + if all_day { 86_400 } else { 7_200 });
+    let place = [b.provider.as_deref(), b.city.as_deref()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(hysj_core::invite::Invite {
+        method: "PUBLISH".into(),
+        uid: format!("{}@hysj", b.key),
+        summary: if b.reference.is_empty() {
+            b.title.clone()
+        } else {
+            format!("{} ({})", b.title, b.reference)
+        },
+        start,
+        end,
+        all_day,
+        location: place,
+        ..Default::default()
+    })
+}
+
+/// Invites still to come; each says what else is on at that time (your
+/// other invites, unless declined, and your bookings).
+fn calendar(daemon: &Daemon) -> Result<Vec<hysj_proto::InviteItem>, RpcError> {
+    let mine: Vec<String> = daemon
+        .store
+        .identities()
+        .map_err(backend_err)?
+        .into_iter()
+        .map(|i| i.address.to_lowercase())
+        .collect();
+    // Invites you sent yourself aren't yours to answer.
+    let stored: Vec<_> = daemon
+        .store
+        .invites(now())
+        .map_err(backend_err)?
+        .into_iter()
+        .filter(|i| !mine.contains(&i.invite.organizer_addr))
+        .collect();
+    let mut busy: Vec<(String, i64, i64, bool)> = stored
+        .iter()
+        .filter(|i| i.answer.as_deref() != Some("declined"))
+        .map(|i| {
+            (
+                i.invite.uid.clone(),
+                i.invite.start,
+                i.invite.end,
+                i.invite.all_day,
+            )
+        })
+        .collect();
+    let bookings = daemon.store.bookings().map_err(backend_err)?;
+    let mut titles: HashMap<String, String> = stored
+        .iter()
+        .map(|i| (i.invite.uid.clone(), i.invite.summary.clone()))
+        .collect();
+    for b in &bookings {
+        if let Some(e) = booking_event(b) {
+            titles.insert(e.uid.clone(), b.title.clone());
+            busy.push((e.uid, e.start, e.end, e.all_day));
+        }
+    }
+    let tz = jiff::tz::TimeZone::system();
+    Ok(stored
+        .into_iter()
+        .map(|s| {
+            let i = s.invite;
+            // All-day events (a trip, a birthday) don't clash with a meeting.
+            let clash = (!i.all_day)
+                .then(|| {
+                    busy.iter().find(|(uid, start, end, all_day)| {
+                        *uid != i.uid && !all_day && *start < i.end && i.start < *end
+                    })
+                })
+                .flatten()
+                .map(|(uid, start, _, _)| {
+                    let at = jiff::Timestamp::from_second(*start)
+                        .map(|t| t.to_zoned(tz.clone()).strftime("%H:%M").to_string())
+                        .unwrap_or_default();
+                    format!(
+                        "Clashes with {} at {at}",
+                        titles.get(uid).map_or("something else", String::as_str)
+                    )
+                });
+            hysj_proto::InviteItem {
+                uid: i.uid,
+                message: s.message,
+                summary: i.summary,
+                start: i.start,
+                end: i.end,
+                all_day: i.all_day,
+                location: i.location,
+                organizer: if i.organizer_name.is_empty() {
+                    i.organizer_addr.clone()
+                } else {
+                    i.organizer_name
+                },
+                organizer_addr: i.organizer_addr,
+                to: s.to,
+                answer: s.answer,
+                clash,
+            }
+        })
+        .collect())
 }
 
 /// Sent mail of the last 30 days that asked for something and has no
@@ -1188,6 +1306,7 @@ async fn unsubscribe(hub: &Hub, address: &str) -> Result<hysj_proto::Unsubscribe
                 subject,
                 body: "unsubscribe".into(),
                 reply_to: None,
+                calendar: None,
             })
             .await?;
             done("mailto", None)
@@ -1318,6 +1437,72 @@ async fn dispatch(req: Request, daemon: &mut Daemon, conn: &mut Conn) -> Result<
                     .map_err(backend_err)?
                     .len() as u32,
             })
+        }
+        method::CALENDAR => to_value(calendar(daemon)?),
+        method::CALENDAR_EVENT => {
+            let p: hysj_proto::CalendarEvent = params(req.params)?;
+            let inv = match (p.invite, p.booking) {
+                (Some(uid), _) => daemon
+                    .store
+                    .invites(0)
+                    .map_err(backend_err)?
+                    .into_iter()
+                    .find(|i| i.invite.uid == uid)
+                    .map(|i| i.invite),
+                (None, Some(key)) => daemon
+                    .store
+                    .bookings()
+                    .map_err(backend_err)?
+                    .into_iter()
+                    .find(|b| b.key == key)
+                    .and_then(|b| booking_event(&b)),
+                (None, None) => None,
+            };
+            let inv = inv.ok_or_else(|| RpcError::new(RpcError::NOT_FOUND, "no such event"))?;
+            to_value(hysj_core::invite::event(&inv, now()))
+        }
+        method::INVITE_ANSWER => {
+            let p: hysj_proto::InviteAnswer = params(req.params)?;
+            let partstat = match p.answer.as_str() {
+                "accepted" => "ACCEPTED",
+                "tentative" => "TENTATIVE",
+                "declined" => "DECLINED",
+                _ => {
+                    return Err(RpcError::new(
+                        RpcError::INVALID_PARAMS,
+                        "accepted, tentative or declined",
+                    ));
+                }
+            };
+            let stored = daemon
+                .store
+                .invites(0)
+                .map_err(backend_err)?
+                .into_iter()
+                .find(|i| i.invite.uid == p.uid)
+                .ok_or_else(|| RpcError::new(RpcError::NOT_FOUND, "no such invite"))?;
+            let i = &stored.invite;
+            let word = match partstat {
+                "ACCEPTED" => "Accepted",
+                "TENTATIVE" => "Tentative",
+                _ => "Declined",
+            };
+            daemon
+                .send(SendParams {
+                    from: stored.to.clone(),
+                    to: vec![i.organizer_addr.clone()],
+                    cc: vec![],
+                    subject: format!("{word}: {}", i.summary),
+                    body: format!("{word}: {}\n", i.summary),
+                    reply_to: None,
+                    calendar: Some(hysj_core::invite::reply(i, &stored.to, partstat, now())),
+                })
+                .await?;
+            daemon
+                .store
+                .answer_invite(&p.uid, Some(&p.answer))
+                .map_err(backend_err)?;
+            to_value(())
         }
         method::WAITING_SET => {
             let p: hysj_proto::WaitingSet = params(req.params)?;

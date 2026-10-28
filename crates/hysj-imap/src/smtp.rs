@@ -3,7 +3,7 @@
 use std::hash::{BuildHasher, Hasher};
 
 use hysj_core::{BackendError, Outgoing};
-use lettre::message::{Mailbox, header::ContentType};
+use lettre::message::{Mailbox, MultiPart, SinglePart, header::ContentType};
 use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 
@@ -74,7 +74,20 @@ pub(crate) fn build(out: &Outgoing) -> Result<(Message, String), BackendError> {
         let refs: Vec<String> = out.references.iter().map(|r| format!("<{r}>")).collect();
         b = b.references(refs.join(" "));
     }
-    let msg = b.header(ContentType::TEXT_PLAIN).body(out.body.clone())?;
+    let msg = match &out.calendar {
+        Some(ics) => b.multipart(
+            MultiPart::alternative()
+                .singlepart(SinglePart::plain(out.body.clone()))
+                .singlepart(
+                    SinglePart::builder()
+                        .header(ContentType::parse(
+                            "text/calendar; method=REPLY; charset=UTF-8",
+                        )?)
+                        .body(ics.clone()),
+                ),
+        )?,
+        None => b.header(ContentType::TEXT_PLAIN).body(out.body.clone())?,
+    };
     Ok((msg, message_id))
 }
 
@@ -131,6 +144,7 @@ mod tests {
             body: "Ja, det passer.\n".into(),
             in_reply_to: Some("k1@x.example".into()),
             references: vec!["k0@x.example".into(), "k1@x.example".into()],
+            calendar: None,
         };
         let (msg, id) = build(&out).unwrap();
         let text = String::from_utf8(msg.formatted()).unwrap();
@@ -159,7 +173,21 @@ mod tests {
             })
             .is_err()
         );
-        assert!(build(&Outgoing { to: vec![], ..out }).is_err());
+        assert!(
+            build(&Outgoing {
+                to: vec![],
+                ..out.clone()
+            })
+            .is_err()
+        );
+        let (answer, _) = build(&Outgoing {
+            calendar: Some("BEGIN:VCALENDAR\r\nMETHOD:REPLY\r\nEND:VCALENDAR\r\n".into()),
+            ..out
+        })
+        .unwrap();
+        let text = String::from_utf8(answer.formatted()).unwrap();
+        assert!(text.contains("multipart/alternative"), "{text}");
+        assert!(text.contains("text/calendar; method=REPLY"), "{text}");
     }
 }
 

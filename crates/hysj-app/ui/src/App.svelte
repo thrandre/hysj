@@ -11,6 +11,7 @@
   import Orders from './views/Orders.svelte';
   import Folder from './views/Folder.svelte';
   import Archive from './views/Archive.svelte';
+  import Calendar from './views/Calendar.svelte';
   import Cleanup from './views/Cleanup.svelte';
   import Waiting from './views/Waiting.svelte';
   import Settings from './views/Settings.svelte';
@@ -69,6 +70,8 @@
     <Folder />
   {:else if app.view === 'done'}
     <Archive />
+  {:else if app.view === 'calendar'}
+    <Calendar />
   {:else if app.view === 'waiting'}
     <Waiting />
   {:else if app.view === 'cleanup'}

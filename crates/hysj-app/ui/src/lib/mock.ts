@@ -1,7 +1,7 @@
 // The browser-only Rust side: answers from `public/snapshot.local.json` (a dump
 // of real mail, never committed) or the synthetic fixture.
 
-import type { Cleanup, Snapshot, Subscription, WaitItem } from './types.ts';
+import type { Cleanup, InviteItem, Snapshot, Subscription, WaitItem } from './types.ts';
 import { fixture, fixtureEdition } from './fixture.ts';
 
 let data: Promise<Snapshot> | null = null;
@@ -86,6 +86,12 @@ export async function mock(name: string, args: Record<string, unknown>): Promise
     message_view: () => mockView(String(args.id)),
     search: () => [],
     cleanup: () => cleanupData,
+    calendar: () => invites,
+    invite_answer: () => {
+      const i = invites.find((x) => x.uid === args.uid);
+      if (i) i.answer = String(args.answer);
+      return null;
+    },
     waiting: () => ({
       items: waitingItems.filter((w) => !waitingGone.has(w.id)),
       answered: [{ id: s.people[0]?.id ?? '1', name: 'Marcus Berg', subject: 'Sync conflicts', ts: Date.now() / 1000 - 86400, bucket: 'people' }],
@@ -201,4 +207,16 @@ const waitingItems: WaitItem[] = [
   { id: 'w1', name: 'Supplier support', address: 'support@supplier.example', from: 'kai@work.example', sent: t - 9 * day, subject: 'Double charge on the October invoice', asked: 'Could you refund the double charge on the October invoice?', due: t - 2 * day, words: null },
   { id: 'w2', name: 'Ingrid Solheim', address: 'ingrid@example.com', from: 'kai@example.com', sent: t - 1.5 * day, subject: 'Budget', asked: 'Could you send me the latest budget draft by Friday?', due: t + 2 * day, words: 'by Friday' },
   { id: 'w3', name: 'Jonas Lie', address: 'jonas@example.com', from: 'kai@example.com', sent: t - day, subject: 'Tau', asked: 'Kan jeg låne tauet ditt på torsdag?', due: t + 2.2 * day, words: null },
+];
+
+/** Invented invites for the Calendar preview. */
+const at = (days: number, h: number, m = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(h, m, 0, 0);
+  return d.getTime() / 1000;
+};
+const invites: InviteItem[] = [
+  { uid: 'i1', message: 'i1', summary: 'Sync engine design review', start: at(2, 17, 30), end: at(2, 18, 30), all_day: false, location: 'Video call', organizer: 'Marcus Berg', organizer_addr: 'marcus@example.com', to: 'kai@work.example', answer: null, clash: 'Clashes with Climbing at 18:00' },
+  { uid: 'i2', message: 'i2', summary: 'Board meeting', start: at(6, 19), end: at(6, 21), all_day: false, location: 'The common room', organizer: 'Ingrid Solheim', organizer_addr: 'ingrid@example.com', to: 'kai@example.com', answer: null, clash: null },
 ];

@@ -4,7 +4,7 @@
 //! ponytail: schema.org microdata and mails without structured data are left to
 //! the AI tier (step 9).
 
-use mail_parser::{Message, MessageParser};
+use mail_parser::{Message, MessageParser, MimeHeaders};
 use serde_json::Value;
 
 /// Which extractors a message is worth fetching a body for, from its headers.
@@ -58,6 +58,17 @@ const CODE_SUBJECT: &[&str] = &[
     "confirm your email",
 ];
 const STRUCTURED_SUBJECT: &[&str] = &[
+    // Calendar invites (their text/calendar part); Outlook's carry only the
+    // meeting's title. ponytail: by subject; a Content-Class header check if
+    // Outlook invites matter.
+    "invitation",
+    "invitasjon",
+    "invite",
+    "updated event",
+    "oppdatert",
+    "canceled event",
+    "cancelled event",
+    "avlyst",
     "order",
     "ordre",
     "bestilling",
@@ -168,6 +179,7 @@ pub enum Extract {
     Booking(Booking),
     Order(Order),
     Listing(crate::finn::Listing),
+    Invite(crate::invite::Invite),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -265,6 +277,17 @@ pub fn extract(raw: &[u8]) -> Vec<Extract> {
     }
     for v in json_ld(&html) {
         walk(&v, &mut out);
+    }
+    // A calendar invite: its text/calendar part, or an attached .ics.
+    let ics = msg.parts.iter().find_map(|p| {
+        let calendar = p.is_content_type("text", "calendar");
+        let attached = p
+            .attachment_name()
+            .is_some_and(|n| n.to_lowercase().ends_with(".ics"));
+        (calendar || attached).then(|| String::from_utf8_lossy(p.contents()).into_owned())
+    });
+    if let Some(i) = ics.as_deref().and_then(crate::invite::parse) {
+        out.push(Extract::Invite(i));
     }
     out
 }

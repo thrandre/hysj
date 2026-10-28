@@ -10,6 +10,7 @@ pub mod digest;
 pub mod edition;
 pub mod extract;
 pub mod finn;
+pub mod invite;
 pub mod kinds;
 pub mod store;
 pub mod sync;

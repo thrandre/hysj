@@ -318,6 +318,7 @@ async fn cli_main() -> Result<()> {
                 subject,
                 body,
                 reply_to,
+                calendar: None,
             };
             let r: SendResult = client.call(method::SEND, params).await?;
             if cli.json {
