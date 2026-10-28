@@ -6,6 +6,7 @@ import type {
   Account,
   AccountAddParams,
   Asked,
+  Cleanup,
   AiSettings,
   BookingItem,
   Bucket,
@@ -23,6 +24,7 @@ import type {
   MessageView,
   OrderItem,
   ProviderInfo,
+  Unsubscribed,
   ScreenerDecided,
   SendParams,
   SendResult,
@@ -71,6 +73,11 @@ export const api = {
   search: (query: string) => call<Found[]>('search', { query }),
   /** Ask your mail: answered on this computer; takes seconds. */
   ask: (question: string) => call<Asked>('ask', { question }),
+  cleanup: () => call<Cleanup>('cleanup'),
+  /** At the source; a web page opens in the browser. Takes seconds. */
+  unsubscribe: (address: string) => call<Unsubscribed>('unsubscribe', { address }),
+  cleanupKeep: (address: string, keep: boolean) => call<null>('cleanup_keep', { address, keep }),
+  pileArchive: () => call<number>('pile_archive'),
   digestEdition: (pick: number) => call<Edition>('digest_edition', { pick }),
   digestSet: (key: string, on: boolean) => call<null>('digest_set', { key, on }),
   kindCorrect: (record: string, kind: string) => call<null>('kind_correct', { record, kind }),

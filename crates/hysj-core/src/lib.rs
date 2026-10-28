@@ -4,6 +4,7 @@
 pub mod ask;
 pub mod backend;
 pub mod classify;
+pub mod cleanup;
 pub mod client;
 pub mod digest;
 pub mod edition;

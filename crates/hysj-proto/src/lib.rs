@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Bumped on any incompatible change to the types below.
-pub const PROTOCOL_VERSION: u32 = 27;
+pub const PROTOCOL_VERSION: u32 = 28;
 
 // --- JSON-RPC 2.0 envelopes -------------------------------------------------
 
@@ -143,6 +143,14 @@ pub mod method {
     pub const SEARCH: &str = "search";
     /// A question about your mail, answered on this computer from the mail kept here.
     pub const ASK: &str = "ask";
+    /// Your subscriptions, least read first, and the old pile.
+    pub const CLEANUP: &str = "cleanup";
+    /// Unsubscribe from a sender, at the source (RFC 8058, mailto, or its page).
+    pub const UNSUBSCRIBE: &str = "cleanup/unsubscribe";
+    /// Keep a subscription (never suggested again), or forget that choice.
+    pub const CLEANUP_KEEP: &str = "cleanup/keep";
+    /// Archive the old pile: untouched bulk mail older than a year.
+    pub const PILE_ARCHIVE: &str = "cleanup/pile";
     /// A Digest delivery as a short read: stories built from the mail in it.
     pub const DIGEST_EDITION: &str = "digest/edition";
     /// Whether the on-device AI runs; with params, turn it on or off first.
@@ -943,4 +951,60 @@ pub struct Found {
     pub subject: String,
     /// Unix seconds.
     pub ts: Option<i64>,
+}
+
+// --- Clean up ------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct Cleanup {
+    /// Since when Hysj has counted which mail you open (unix seconds).
+    pub counting_since: i64,
+    /// Least read first.
+    pub subscriptions: Vec<Subscription>,
+    /// Untouched newsletters, notifications and receipts older than a year.
+    pub pile: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct Subscription {
+    pub address: String,
+    pub name: String,
+    /// Emails a week, over the last 90 days.
+    pub per_week: f32,
+    /// The same in words: "3 a week", "daily", "monthly".
+    pub frequency: String,
+    /// Opened in Hysj, of the ones that came since counting began.
+    pub opened: u32,
+    pub counted: u32,
+    /// Enough mail since counting began, none of it opened.
+    pub never: bool,
+    /// "one_click", "mailto", "web" or "none".
+    pub method: String,
+    /// "active", "unsubscribed", "kept" or "blocked" (kept sending after
+    /// you unsubscribed).
+    pub state: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct AddressParams {
+    pub address: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct CleanupKeep {
+    pub address: String,
+    pub keep: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct Unsubscribed {
+    /// How it was done: "one_click", "mailto" or "web".
+    pub method: String,
+    /// For "web": the sender's page, for the app to open.
+    pub url: Option<String>,
 }

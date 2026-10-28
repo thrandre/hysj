@@ -855,6 +855,16 @@ impl Hub {
             }
             results.push(SyncResult { account: name, new });
         }
+        // Unsubscribed a week ago and still sending: blocked.
+        let late = self.daemon.lock().await.store.enforce_unsubscribes();
+        if let Ok(late) = late.as_deref()
+            && !late.is_empty()
+        {
+            tracing::info!(
+                senders = late.len(),
+                "kept sending after unsubscribing; blocked"
+            );
+        }
         Ok(results)
     }
 
@@ -962,6 +972,9 @@ const MUTATING: &[&str] = &[
     method::DIGEST_HOURS,
     method::AI_SETTINGS,
     method::KIND_CORRECT,
+    method::UNSUBSCRIBE,
+    method::CLEANUP_KEEP,
+    method::PILE_ARCHIVE,
 ];
 
 async fn handle(raw: &str, hub: &Hub, conn: &mut Conn) -> Response {
@@ -985,6 +998,13 @@ async fn handle(raw: &str, hub: &Hub, conn: &mut Conn) -> Response {
             Ok(p) => hub.sync(p.account).await.and_then(to_value),
             Err(e) => Err(e),
         },
+        // Waits on the sender's server: never under the daemon's lock.
+        method::UNSUBSCRIBE if conn.greeted => {
+            match params::<hysj_proto::AddressParams>(req.params) {
+                Ok(p) => unsubscribe(hub, &p.address).await.and_then(to_value),
+                Err(e) => Err(e),
+            }
+        }
         // Waits on the local model: never under the daemon's lock.
         method::ASK if conn.greeted => match params::<hysj_proto::AskParams>(req.params) {
             Ok(p) => to_value(ai::ask(hub, &p.question).await),
@@ -1004,6 +1024,88 @@ async fn handle(raw: &str, hub: &Hub, conn: &mut Conn) -> Response {
         }
         Err(e) => Response::err(Some(id), e),
     }
+}
+
+/// Unsubscribes at the source, the best way the sender offers: RFC 8058
+/// one-click (a POST, no page), else an email from the address it came to,
+/// else its page for the app to open. Recorded so Clean up can check, a
+/// week later, that the mail stopped.
+async fn unsubscribe(hub: &Hub, address: &str) -> Result<hysj_proto::Unsubscribed, RpcError> {
+    use hysj_core::cleanup::Method;
+    let address = address.trim().to_lowercase();
+    let method = {
+        let d = hub.daemon.lock().await;
+        let since = now() - hysj_core::cleanup::DAYS * 86_400;
+        d.store
+            .bulk_since(since)
+            .map_err(backend_err)?
+            .into_iter()
+            .filter(|b| b.address == address)
+            .max_by_key(|b| b.date)
+            .map(|b| b.method)
+            .unwrap_or(Method::None)
+    };
+    let done = |m: &str, url: Option<String>| hysj_proto::Unsubscribed {
+        method: m.into(),
+        url,
+    };
+    let result = match &method {
+        Method::OneClick(url) => {
+            let resp = reqwest::Client::new()
+                .post(url)
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .body("List-Unsubscribe=One-Click")
+                .timeout(std::time::Duration::from_secs(20))
+                .send()
+                .await
+                .map_err(|e| backend_err(format!("the sender's server: {e}")))?;
+            if !resp.status().is_success() {
+                return Err(backend_err(format!(
+                    "the sender's server answered {}",
+                    resp.status()
+                )));
+            }
+            done("one_click", None)
+        }
+        Method::Mailto(m) => {
+            let u = reqwest::Url::parse(&format!("mailto:{m}"))
+                .map_err(|_| backend_err("the sender's unsubscribe address is broken"))?;
+            let subject = u
+                .query_pairs()
+                .find(|(k, _)| k.eq_ignore_ascii_case("subject"))
+                .map_or_else(|| "unsubscribe".to_string(), |(_, v)| v.into_owned());
+            let mut d = hub.daemon.lock().await;
+            let from = d
+                .store
+                .received_on(&address)
+                .map_err(backend_err)?
+                .ok_or_else(|| backend_err("no mail from this sender"))?;
+            d.send(SendParams {
+                from,
+                to: vec![u.path().to_string()],
+                cc: vec![],
+                subject,
+                body: "unsubscribe".into(),
+                reply_to: None,
+            })
+            .await?;
+            done("mailto", None)
+        }
+        Method::Web(url) => done("web", Some(url.clone())),
+        Method::None => {
+            return Err(RpcError::new(
+                RpcError::INVALID_PARAMS,
+                "this sender doesn't say how to unsubscribe",
+            ));
+        }
+    };
+    hub.daemon
+        .lock()
+        .await
+        .store
+        .set_subscription(&address, Some("unsubscribed"))
+        .map_err(backend_err)?;
+    Ok(result)
 }
 
 /// "Sign in with …" (the address's provider): start hands out the page to
@@ -1094,7 +1196,42 @@ async fn dispatch(req: Request, daemon: &mut Daemon, conn: &mut Conn) -> Result<
         }
         method::MESSAGE_VIEW => {
             let p: ShowParams = params(req.params)?;
-            to_value(daemon.view(&p.id).await?)
+            let view = daemon.view(&p.id).await?;
+            let _ = daemon.store.record_open(&p.id);
+            to_value(view)
+        }
+        method::CLEANUP => {
+            let since = now() - hysj_core::cleanup::DAYS * 86_400;
+            let _ = daemon.store.enforce_unsubscribes();
+            let counting_since = daemon.store.opens_since().map_err(backend_err)?;
+            to_value(hysj_proto::Cleanup {
+                counting_since,
+                subscriptions: hysj_core::cleanup::subscriptions(
+                    &daemon.store.bulk_since(since).map_err(backend_err)?,
+                    &daemon.store.subscription_states().map_err(backend_err)?,
+                    counting_since,
+                ),
+                pile: daemon
+                    .store
+                    .pile(now() - 365 * 86_400)
+                    .map_err(backend_err)?
+                    .len() as u32,
+            })
+        }
+        method::CLEANUP_KEEP => {
+            let p: hysj_proto::CleanupKeep = params(req.params)?;
+            daemon
+                .store
+                .set_subscription(&p.address, p.keep.then_some("kept"))
+                .map_err(backend_err)?;
+            to_value(())
+        }
+        method::PILE_ARCHIVE => {
+            let ids = daemon
+                .store
+                .pile(now() - 365 * 86_400)
+                .map_err(backend_err)?;
+            to_value(daemon.store.mark_done(&ids).map_err(backend_err)?)
         }
         method::MESSAGE_ATTACHMENT => {
             let p: AttachmentParams = params(req.params)?;

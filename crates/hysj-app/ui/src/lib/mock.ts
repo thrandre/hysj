@@ -1,7 +1,7 @@
 // The browser-only Rust side: answers from `public/snapshot.local.json` (a dump
 // of real mail, never committed) or the synthetic fixture.
 
-import type { Snapshot } from './types.ts';
+import type { Cleanup, Snapshot, Subscription } from './types.ts';
 import { fixture, fixtureEdition } from './fixture.ts';
 
 let data: Promise<Snapshot> | null = null;
@@ -85,6 +85,22 @@ export async function mock(name: string, args: Record<string, unknown>): Promise
     },
     message_view: () => mockView(String(args.id)),
     search: () => [],
+    cleanup: () => cleanupData,
+    unsubscribe: () => {
+      const sub = cleanupData.subscriptions.find((x) => x.address === args.address);
+      if (sub) sub.state = 'unsubscribed';
+      return { method: sub?.method ?? 'one_click', url: null };
+    },
+    cleanup_keep: () => {
+      const sub = cleanupData.subscriptions.find((x) => x.address === args.address);
+      if (sub) sub.state = args.keep ? 'kept' : 'active';
+      return null;
+    },
+    pile_archive: () => {
+      const n = cleanupData.pile;
+      cleanupData.pile = 0;
+      return n;
+    },
     // Ask your mail: one invented answer, after a model-like pause.
     ask: () =>
       new Promise((r) => setTimeout(r, 1500)).then(() =>
@@ -141,3 +157,30 @@ and the bank details are at <a href="https://login.example.ru/dnb">www.dnb.no</a
     sender: 'ingrid@example.no',
   };
 }
+
+/** Invented subscriptions for the Clean up preview. */
+const sub = (name: string, per_week: number, frequency: string, opened: number, counted: number, method = 'one_click'): Subscription => ({
+  address: `news@${name.toLowerCase().replace(/[^a-z]+/g, '')}.example`,
+  name,
+  per_week,
+  frequency,
+  opened,
+  counted,
+  never: counted >= 4 && opened === 0,
+  method,
+  state: 'active',
+});
+const cleanupData: Cleanup = {
+  counting_since: Date.now() / 1000 - 70 * 86400,
+  subscriptions: [
+    sub('Gadget Weekly product updates', 3, '3 a week', 0, 30),
+    sub('Fashion Store', 7, 'daily', 0, 70),
+    sub('Conference news', 1, 'weekly', 0, 10, 'web'),
+    sub('Airline offers', 2, '2 a week', 1, 20),
+    sub('Hardware Store deals', 1, 'weekly', 2, 10, 'mailto'),
+    sub('Woodworking monthly', 0.25, 'monthly', 2, 3),
+    sub('Local-first newsletter', 1, 'weekly', 9, 10),
+    sub('Rust weekly roundup', 1, 'weekly', 10, 10),
+  ],
+  pile: 12408,
+};

@@ -11,6 +11,7 @@
   import Orders from './views/Orders.svelte';
   import Folder from './views/Folder.svelte';
   import Archive from './views/Archive.svelte';
+  import Cleanup from './views/Cleanup.svelte';
   import Settings from './views/Settings.svelte';
   import Search from './views/Search.svelte';
   import Welcome from './views/Welcome.svelte';
@@ -67,6 +68,8 @@
     <Folder />
   {:else if app.view === 'done'}
     <Archive />
+  {:else if app.view === 'cleanup'}
+    <Cleanup />
   {:else if app.view === 'settings'}
     <Settings />
   {:else if app.view === 'search'}

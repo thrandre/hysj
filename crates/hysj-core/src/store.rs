@@ -204,6 +204,11 @@ const MIGRATIONS: &[&str] = &[
      DELETE FROM order_sources WHERE order_key NOT IN (SELECT key FROM orders);
      DELETE FROM booking_sources WHERE booking NOT IN (SELECT key FROM bookings);
      DELETE FROM ai_cache WHERE task = 'booking'",
+    // v21: Clean up. Which mail you opened in Hysj (counted from now on),
+    // and what you chose per subscription.
+    "CREATE TABLE opens (key TEXT PRIMARY KEY, at INTEGER NOT NULL);
+     CREATE TABLE subscriptions (address TEXT PRIMARY KEY, state TEXT NOT NULL, at INTEGER NOT NULL);
+     INSERT OR REPLACE INTO meta (key, value) VALUES ('opens_since', unixepoch());",
 ];
 
 /// SQL for a message's key in the `done` table.
@@ -735,6 +740,142 @@ impl Store {
                 },
             )
             .optional()
+    }
+
+    /// The address `sender`'s newest mail came to (for answering it).
+    pub fn received_on(&self, sender: &str) -> Result<Option<String>, StoreError> {
+        self.db
+            .query_row(
+                "SELECT coalesce(nullif(m.arrived_on, ''), a.address) FROM messages m
+                 JOIN accounts a ON a.name = m.account
+                 WHERE lower(m.from_addr) = ?1 ORDER BY m.date DESC LIMIT 1",
+                [sender.trim().to_lowercase()],
+                |r| r.get(0),
+            )
+            .optional()
+    }
+
+    /// The reader opened this mail in Hysj (Clean up's read counts).
+    pub fn record_open(&self, id: &str) -> Result<(), StoreError> {
+        self.db.execute(
+            &format!("INSERT OR IGNORE INTO opens (key, at) SELECT {DONE_KEY}, unixepoch() FROM messages WHERE id = ?1"),
+            [id],
+        )?;
+        Ok(())
+    }
+
+    /// Since when opens are counted.
+    pub fn opens_since(&self) -> Result<i64, StoreError> {
+        let v: Option<String> = self
+            .db
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'opens_since'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(v.and_then(|v| v.parse().ok()).unwrap_or(0))
+    }
+
+    /// Bulk mail (with `List-Unsubscribe`) since `since`, blocked senders' too.
+    pub fn bulk_since(&self, since: i64) -> Result<Vec<crate::cleanup::Bulk>, StoreError> {
+        let mut q = self.db.prepare(&format!(
+            "SELECT lower(from_addr), coalesce(from_name, from_addr), date, headers,
+                    EXISTS (SELECT 1 FROM opens o WHERE o.key = {DONE_KEY})
+             FROM messages WHERE date >= ?1"
+        ))?;
+        let rows = q.query_map([since], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, Vec<u8>>(3)?,
+                r.get::<_, bool>(4)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (address, name, date, headers, opened) = row?;
+            let Some(h) = mail_parser::MessageParser::default().parse_headers(&headers) else {
+                continue;
+            };
+            // Raw: the parser reads these as addresses and loses the URLs.
+            let text = |n: &str| {
+                h.header_raw(n)
+                    .map(|r| r.split_whitespace().collect::<String>())
+            };
+            let Some(unsub) = text("List-Unsubscribe") else {
+                continue;
+            };
+            out.push(crate::cleanup::Bulk {
+                address,
+                name,
+                date,
+                opened,
+                method: crate::cleanup::Method::parse(
+                    &unsub,
+                    text("List-Unsubscribe-Post").as_deref(),
+                ),
+            });
+        }
+        Ok(out)
+    }
+
+    /// The reader's choice per subscription: "unsubscribed", "kept", "blocked".
+    pub fn subscription_states(
+        &self,
+    ) -> Result<std::collections::HashMap<String, String>, StoreError> {
+        let mut q = self
+            .db
+            .prepare("SELECT address, state FROM subscriptions")?;
+        let rows = q.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect()
+    }
+
+    /// Sets (or with `None` forgets) the choice for a subscription.
+    pub fn set_subscription(&self, address: &str, state: Option<&str>) -> Result<(), StoreError> {
+        let address = address.trim().to_lowercase();
+        match state {
+            Some(st) => self.db.execute(
+                "INSERT OR REPLACE INTO subscriptions (address, state, at) VALUES (?1, ?2, unixepoch())",
+                rusqlite::params![address, st],
+            )?,
+            None => self
+                .db
+                .execute("DELETE FROM subscriptions WHERE address = ?1", [address])?,
+        };
+        Ok(())
+    }
+
+    /// Senders that kept sending a week after you unsubscribed: blocked,
+    /// and marked so Clean up says so. Returns their addresses.
+    pub fn enforce_unsubscribes(&mut self) -> Result<Vec<String>, StoreError> {
+        let late: Vec<String> = {
+            let mut q = self.db.prepare(
+                "SELECT s.address FROM subscriptions s WHERE s.state = 'unsubscribed'
+                 AND EXISTS (SELECT 1 FROM messages m WHERE lower(m.from_addr) = s.address
+                             AND m.date > s.at + 7 * 86400)",
+            )?;
+            let rows = q.query_map([], |r| r.get(0))?;
+            rows.collect::<Result<_, _>>()?
+        };
+        for a in &late {
+            self.decide(a, Decision::Block)?;
+            self.set_subscription(a, Some("blocked"))?;
+        }
+        Ok(late)
+    }
+
+    /// Untouched newsletters, notifications and receipts sent before
+    /// `before`: digest mail never opened or cleared.
+    pub fn pile(&self, before: i64) -> Result<Vec<String>, StoreError> {
+        let mut q = self.db.prepare(&format!(
+            "SELECT id FROM messages WHERE bucket = 'digest' AND date < ?1
+             AND {DONE_KEY} NOT IN (SELECT key FROM done)
+             AND {DONE_KEY} NOT IN (SELECT key FROM opens)"
+        ))?;
+        let rows = q.query_map([before], |r| Ok(r.get::<_, i64>(0)?.to_string()))?;
+        rows.collect()
     }
 
     /// Every kept mail with its text, for Ask your mail (blocked mail left out).

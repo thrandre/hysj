@@ -306,6 +306,41 @@ async fn ask(question: String) -> Res<hysj_proto::Asked> {
 }
 
 #[tauri::command]
+async fn cleanup(b: State<'_, Bridge>) -> Res<hysj_proto::Cleanup> {
+    b.call(method::CLEANUP, ()).await
+}
+
+/// Waits on the sender's server: on a connection of its own, like `ask`.
+#[tauri::command]
+async fn unsubscribe(address: String) -> Res<hysj_proto::Unsubscribed> {
+    let mut client = hysjd::socket::client(None)
+        .await
+        .map_err(|e| e.to_string())?;
+    let done: hysj_proto::Unsubscribed = client
+        .call(method::UNSUBSCRIBE, hysj_proto::AddressParams { address })
+        .await
+        .map_err(|e| e.to_string())?;
+    if let Some(url) = &done.url {
+        open_link(url.clone())?;
+    }
+    Ok(done)
+}
+
+#[tauri::command]
+async fn cleanup_keep(b: State<'_, Bridge>, address: String, keep: bool) -> Res<()> {
+    b.call(
+        method::CLEANUP_KEEP,
+        hysj_proto::CleanupKeep { address, keep },
+    )
+    .await
+}
+
+#[tauri::command]
+async fn pile_archive(b: State<'_, Bridge>) -> Res<usize> {
+    b.call(method::PILE_ARCHIVE, ()).await
+}
+
+#[tauri::command]
 async fn digest_edition(b: State<'_, Bridge>, pick: u8) -> Res<hysj_proto::Edition> {
     b.call(method::DIGEST_EDITION, hysj_proto::EditionParams { pick })
         .await
@@ -477,6 +512,10 @@ fn main() {
         .manage(update::Pending::default())
         .invoke_handler(tauri::generate_handler![
             ask,
+            cleanup,
+            unsubscribe,
+            cleanup_keep,
+            pile_archive,
             account_list,
             identity_list,
             contact_list,
