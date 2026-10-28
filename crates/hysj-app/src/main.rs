@@ -305,6 +305,33 @@ async fn ask(question: String) -> Res<hysj_proto::Asked> {
         .map_err(|e| e.to_string())
 }
 
+/// May fetch sent mail's text from the server first: on a connection of
+/// its own, like `ask`.
+#[tauri::command]
+async fn waiting() -> Res<hysj_proto::Waiting> {
+    let mut client = hysjd::socket::client(None)
+        .await
+        .map_err(|e| e.to_string())?;
+    client
+        .call(method::WAITING, ())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn waiting_set(
+    b: State<'_, Bridge>,
+    id: String,
+    state: String,
+    until: Option<i64>,
+) -> Res<()> {
+    b.call(
+        method::WAITING_SET,
+        hysj_proto::WaitingSet { id, state, until },
+    )
+    .await
+}
+
 #[tauri::command]
 async fn cleanup(b: State<'_, Bridge>) -> Res<hysj_proto::Cleanup> {
     b.call(method::CLEANUP, ()).await
@@ -514,6 +541,8 @@ fn main() {
             ask,
             cleanup,
             unsubscribe,
+            waiting,
+            waiting_set,
             cleanup_keep,
             pile_archive,
             account_list,

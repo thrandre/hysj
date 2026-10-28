@@ -96,6 +96,7 @@ export function hits(s: Snapshot, now: number): Hit[] {
     { kind: 'Sync', label: 'Check for new mail', hint: 'all accounts', go: { sync: true } },
     { kind: 'Focus', label: 'One at a time', hint: 'R reply · E done · H later · → skip', go: { view: 'focus' } },
     { kind: 'Sent', label: 'Sent mail', hint: 'newest first', go: { view: 'sent' } },
+    { kind: 'Waiting', label: 'Who am I waiting on?', hint: 'mail you sent that still needs an answer', go: { view: 'waiting' } },
     { kind: 'Clean up', label: 'Unsubscribe from newsletters I never read', hint: 'your subscriptions, least read first', go: { view: 'cleanup' } },
     { kind: 'Archive', label: 'Open the archive', hint: 'everything that left your Desk · with reasons', go: { view: 'done' } },
     { kind: 'Settings', label: 'Add an account', hint: 'Outlook.com, iCloud or your own domain', go: { view: 'settings' } },

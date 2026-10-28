@@ -6,7 +6,7 @@ import type { Go } from './hits.ts';
 import { clock } from './clock.svelte.ts';
 import { lastSlot, nextSlot, setDigestHours, when } from './words.ts';
 
-export type View = 'desk' | 'focus' | 'digest' | 'screener' | 'codes' | 'bookings' | 'orders' | 'sent' | 'done' | 'settings' | 'search' | 'cleanup';
+export type View = 'desk' | 'focus' | 'digest' | 'screener' | 'codes' | 'bookings' | 'orders' | 'sent' | 'done' | 'settings' | 'search' | 'cleanup' | 'waiting';
 
 export const app = $state({
   data: null as Snapshot | null,

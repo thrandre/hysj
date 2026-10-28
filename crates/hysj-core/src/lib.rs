@@ -16,6 +16,7 @@ pub mod sync;
 pub mod text;
 pub mod transport;
 pub mod view;
+pub mod waiting;
 
 pub use backend::{BackendError, Changes, MailBackend, Outgoing, RawHeaders, SENT_TAG};
 pub use client::{Client, ClientError};

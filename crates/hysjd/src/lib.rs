@@ -975,6 +975,7 @@ const MUTATING: &[&str] = &[
     method::UNSUBSCRIBE,
     method::CLEANUP_KEEP,
     method::PILE_ARCHIVE,
+    method::WAITING_SET,
 ];
 
 async fn handle(raw: &str, hub: &Hub, conn: &mut Conn) -> Response {
@@ -1005,6 +1006,8 @@ async fn handle(raw: &str, hub: &Hub, conn: &mut Conn) -> Response {
                 Err(e) => Err(e),
             }
         }
+        // May fetch sent mail's text from the server: the lock only around the store.
+        method::WAITING if conn.greeted => waiting(hub).await.and_then(to_value),
         // Waits on the local model: never under the daemon's lock.
         method::ASK if conn.greeted => match params::<hysj_proto::AskParams>(req.params) {
             Ok(p) => to_value(ai::ask(hub, &p.question).await),
@@ -1024,6 +1027,104 @@ async fn handle(raw: &str, hub: &Hub, conn: &mut Conn) -> Response {
         }
         Err(e) => Response::err(Some(id), e),
     }
+}
+
+/// Sent mail of the last 30 days that asked for something and has no
+/// answer yet. Bodies missing from the store are fetched first, without
+/// the lock.
+async fn waiting(hub: &Hub) -> Result<hysj_proto::Waiting, RpcError> {
+    use hysj_core::waiting;
+    let since = now() - 30 * 86_400;
+    let sent: Vec<hysj_proto::MessageSummary> = {
+        let d = hub.daemon.lock().await;
+        d.store
+            .sent(None, 200)
+            .map_err(backend_err)?
+            .into_iter()
+            .filter(|m| m.ts.is_some_and(|t| t >= since))
+            .collect()
+    };
+    let missing: Vec<String> = {
+        let d = hub.daemon.lock().await;
+        sent.iter()
+            .filter(|m| {
+                d.store
+                    .get(&m.id)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|s| s.body.is_none())
+            })
+            .map(|m| m.id.clone())
+            .collect()
+    };
+    hub.fetch_bodies(&missing).await;
+    let d = hub.daemon.lock().await;
+    let states = d.store.waiting_states().map_err(backend_err)?;
+    let identities: Vec<String> = d
+        .store
+        .identities()
+        .map_err(backend_err)?
+        .into_iter()
+        .map(|i| i.address.to_lowercase())
+        .collect();
+    let tz = jiff::tz::TimeZone::system();
+    let (mut items, mut answered) = (Vec::new(), Vec::new());
+    for m in sent {
+        let Some(body) = d.store.get(&m.id).ok().flatten().and_then(|s| s.body) else {
+            continue;
+        };
+        let Some(asked) = waiting::asked(&body) else {
+            continue;
+        };
+        let Some((message_id, address, name)) =
+            d.store.first_recipient(&m.id).map_err(backend_err)?
+        else {
+            continue;
+        };
+        if identities.contains(&address.to_lowercase()) {
+            continue;
+        }
+        let sent_ts = m.ts.unwrap_or_default();
+        if let Some(a) = d
+            .store
+            .answer_to(&address, sent_ts, message_id.as_deref(), &m.subject)
+            .map_err(backend_err)?
+        {
+            if a.ts.is_some_and(|t| t >= now() - 7 * 86_400) {
+                answered.push(hysj_proto::WaitAnswered {
+                    id: a.id,
+                    name: a.from,
+                    subject: m.subject.clone(),
+                    ts: a.ts.unwrap_or_default(),
+                    bucket: a.bucket,
+                });
+            }
+            continue;
+        }
+        match states.get(&m.id) {
+            Some((s, _)) if s == "stop" => continue,
+            Some((s, Some(until))) if s == "later" && *until > now() => continue,
+            _ => {}
+        }
+        let at = jiff::Timestamp::from_second(sent_ts)
+            .unwrap_or_else(|_| jiff::Timestamp::now())
+            .to_zoned(tz.clone());
+        let (due, words) = waiting::due(&body, &at);
+        items.push(hysj_proto::WaitItem {
+            id: m.id.clone(),
+            name: name.unwrap_or_else(|| address.clone()),
+            address,
+            from: m.arrived_on.clone(),
+            sent: sent_ts,
+            subject: m.subject,
+            asked,
+            due: due.timestamp().as_second(),
+            words,
+        });
+    }
+    items.sort_by_key(|i| i.due);
+    answered.sort_by_key(|a| std::cmp::Reverse(a.ts));
+    Ok(hysj_proto::Waiting { items, answered })
 }
 
 /// Unsubscribes at the source, the best way the sender offers: RFC 8058
@@ -1217,6 +1318,20 @@ async fn dispatch(req: Request, daemon: &mut Daemon, conn: &mut Conn) -> Result<
                     .map_err(backend_err)?
                     .len() as u32,
             })
+        }
+        method::WAITING_SET => {
+            let p: hysj_proto::WaitingSet = params(req.params)?;
+            if !matches!(p.state.as_str(), "later" | "stop" | "active") {
+                return Err(RpcError::new(
+                    RpcError::INVALID_PARAMS,
+                    "later, stop or active",
+                ));
+            }
+            daemon
+                .store
+                .set_waiting(&p.id, &p.state, p.until)
+                .map_err(backend_err)?;
+            to_value(())
         }
         method::CLEANUP_KEEP => {
             let p: hysj_proto::CleanupKeep = params(req.params)?;

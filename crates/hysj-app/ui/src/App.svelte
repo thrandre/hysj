@@ -12,6 +12,7 @@
   import Folder from './views/Folder.svelte';
   import Archive from './views/Archive.svelte';
   import Cleanup from './views/Cleanup.svelte';
+  import Waiting from './views/Waiting.svelte';
   import Settings from './views/Settings.svelte';
   import Search from './views/Search.svelte';
   import Welcome from './views/Welcome.svelte';
@@ -68,6 +69,8 @@
     <Folder />
   {:else if app.view === 'done'}
     <Archive />
+  {:else if app.view === 'waiting'}
+    <Waiting />
   {:else if app.view === 'cleanup'}
     <Cleanup />
   {:else if app.view === 'settings'}

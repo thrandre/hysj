@@ -60,3 +60,7 @@ export type { SyncParams } from './SyncParams';
 export type { SyncResult } from './SyncResult';
 export type { Unsubscribed } from './Unsubscribed';
 export type { Unsure } from './Unsure';
+export type { WaitAnswered } from './WaitAnswered';
+export type { WaitItem } from './WaitItem';
+export type { Waiting } from './Waiting';
+export type { WaitingSet } from './WaitingSet';

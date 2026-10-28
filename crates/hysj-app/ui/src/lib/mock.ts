@@ -1,7 +1,7 @@
 // The browser-only Rust side: answers from `public/snapshot.local.json` (a dump
 // of real mail, never committed) or the synthetic fixture.
 
-import type { Cleanup, Snapshot, Subscription } from './types.ts';
+import type { Cleanup, Snapshot, Subscription, WaitItem } from './types.ts';
 import { fixture, fixtureEdition } from './fixture.ts';
 
 let data: Promise<Snapshot> | null = null;
@@ -86,6 +86,14 @@ export async function mock(name: string, args: Record<string, unknown>): Promise
     message_view: () => mockView(String(args.id)),
     search: () => [],
     cleanup: () => cleanupData,
+    waiting: () => ({
+      items: waitingItems.filter((w) => !waitingGone.has(w.id)),
+      answered: [{ id: s.people[0]?.id ?? '1', name: 'Marcus Berg', subject: 'Sync conflicts', ts: Date.now() / 1000 - 86400, bucket: 'people' }],
+    }),
+    waiting_set: () => {
+      if (args.state !== 'active') waitingGone.add(String(args.id));
+      return null;
+    },
     unsubscribe: () => {
       const sub = cleanupData.subscriptions.find((x) => x.address === args.address);
       if (sub) sub.state = 'unsubscribed';
@@ -184,3 +192,13 @@ const cleanupData: Cleanup = {
   ],
   pile: 12408,
 };
+
+/** Invented mail you sent, for the Waiting preview. */
+const day = 86400;
+const t = Date.now() / 1000;
+const waitingGone = new Set<string>();
+const waitingItems: WaitItem[] = [
+  { id: 'w1', name: 'Supplier support', address: 'support@supplier.example', from: 'kai@work.example', sent: t - 9 * day, subject: 'Double charge on the October invoice', asked: 'Could you refund the double charge on the October invoice?', due: t - 2 * day, words: null },
+  { id: 'w2', name: 'Ingrid Solheim', address: 'ingrid@example.com', from: 'kai@example.com', sent: t - 1.5 * day, subject: 'Budget', asked: 'Could you send me the latest budget draft by Friday?', due: t + 2 * day, words: 'by Friday' },
+  { id: 'w3', name: 'Jonas Lie', address: 'jonas@example.com', from: 'kai@example.com', sent: t - day, subject: 'Tau', asked: 'Kan jeg låne tauet ditt på torsdag?', due: t + 2.2 * day, words: null },
+];

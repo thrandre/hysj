@@ -209,6 +209,8 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE opens (key TEXT PRIMARY KEY, at INTEGER NOT NULL);
      CREATE TABLE subscriptions (address TEXT PRIMARY KEY, state TEXT NOT NULL, at INTEGER NOT NULL);
      INSERT OR REPLACE INTO meta (key, value) VALUES ('opens_since', unixepoch());",
+    // v22: Waiting on others: what you chose per sent mail.
+    "CREATE TABLE waiting (key TEXT PRIMARY KEY, state TEXT NOT NULL, until INTEGER);",
 ];
 
 /// SQL for a message's key in the `done` table.
@@ -231,6 +233,9 @@ pub struct ReplyContext {
     /// References for the reply: the original's, plus its Message-ID.
     pub references: Vec<String>,
 }
+
+/// A sent mail's Message-ID, and its first recipient's address and name.
+pub type FirstRecipient = (Option<String>, String, Option<String>);
 
 /// A stored message plus what the daemon needs to load its body lazily.
 pub struct Stored {
@@ -753,6 +758,85 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()
+    }
+
+    /// Your choice for a sent mail: ("later", until) or ("stop", None).
+    pub fn waiting_states(
+        &self,
+    ) -> Result<std::collections::HashMap<String, (String, Option<i64>)>, StoreError> {
+        let mut q = self.db.prepare(&format!(
+            "SELECT messages.id, w.state, w.until FROM waiting w JOIN messages ON {DONE_KEY} = w.key"
+        ))?;
+        let rows = q.query_map([], |r| {
+            Ok((r.get::<_, i64>(0)?.to_string(), (r.get(1)?, r.get(2)?)))
+        })?;
+        rows.collect()
+    }
+
+    pub fn set_waiting(&self, id: &str, state: &str, until: Option<i64>) -> Result<(), StoreError> {
+        if state == "active" {
+            self.db.execute(
+                &format!("DELETE FROM waiting WHERE key = (SELECT {DONE_KEY} FROM messages WHERE id = ?1)"),
+                [id],
+            )?;
+        } else {
+            self.db.execute(
+                &format!("INSERT OR REPLACE INTO waiting (key, state, until) SELECT {DONE_KEY}, ?2, ?3 FROM messages WHERE id = ?1"),
+                params![id, state, until],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// The first answer to mail you sent: from `to`, after `after`, in the
+    /// same thread (References / In-Reply-To, else the same subject).
+    pub fn answer_to(
+        &self,
+        to: &str,
+        after: i64,
+        message_id: Option<&str>,
+        subject: &str,
+    ) -> Result<Option<MessageSummary>, StoreError> {
+        let mut q = self.db.prepare(&format!(
+            "SELECT {SUMMARY_COLS}, headers FROM messages
+             WHERE lower(from_addr) = ?1 AND date > ?2 ORDER BY date LIMIT 50"
+        ))?;
+        let bare = crate::waiting::bare_subject(subject);
+        let rows = q.query_map(params![to.trim().to_lowercase(), after], |r| {
+            Ok((summary_row(r)?, r.get::<_, Vec<u8>>(14)?))
+        })?;
+        for row in rows {
+            let (m, headers) = row?;
+            let threaded = message_id.is_some_and(|id| {
+                let h = String::from_utf8_lossy(&headers);
+                h.contains(id.trim_matches(['<', '>']))
+            });
+            if threaded || crate::waiting::bare_subject(&m.subject) == bare {
+                return Ok(Some(m));
+            }
+        }
+        Ok(None)
+    }
+
+    /// A message's Message-ID and its first To recipient (address, name).
+    pub fn first_recipient(
+        &self,
+        id: &str,
+    ) -> Result<Option<FirstRecipient>, StoreError> {
+        let row: Option<(Option<String>, Vec<u8>)> = self
+            .db
+            .query_row(
+                "SELECT message_id, headers FROM messages WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        Ok(row.and_then(|(mid, h)| {
+            classify::recipients(&h)
+                .into_iter()
+                .next()
+                .map(|(a, n)| (mid, a, n))
+        }))
     }
 
     /// The reader opened this mail in Hysj (Clean up's read counts).

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Bumped on any incompatible change to the types below.
-pub const PROTOCOL_VERSION: u32 = 28;
+pub const PROTOCOL_VERSION: u32 = 29;
 
 // --- JSON-RPC 2.0 envelopes -------------------------------------------------
 
@@ -151,6 +151,10 @@ pub mod method {
     pub const CLEANUP_KEEP: &str = "cleanup/keep";
     /// Archive the old pile: untouched bulk mail older than a year.
     pub const PILE_ARCHIVE: &str = "cleanup/pile";
+    /// Mail you sent that asked for something and has no answer yet.
+    pub const WAITING: &str = "waiting";
+    /// Remind me later, stop waiting, or wait again.
+    pub const WAITING_SET: &str = "waiting/set";
     /// A Digest delivery as a short read: stories built from the mail in it.
     pub const DIGEST_EDITION: &str = "digest/edition";
     /// Whether the on-device AI runs; with params, turn it on or off first.
@@ -1007,4 +1011,54 @@ pub struct Unsubscribed {
     pub method: String,
     /// For "web": the sender's page, for the app to open.
     pub url: Option<String>,
+}
+
+// --- Waiting on others ------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct Waiting {
+    /// Soonest due first.
+    pub items: Vec<WaitItem>,
+    /// Answered in the last week.
+    pub answered: Vec<WaitAnswered>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct WaitItem {
+    /// The mail you sent.
+    pub id: String,
+    pub name: String,
+    pub address: String,
+    /// Your address it went from (the nudge goes from it too).
+    pub from: String,
+    pub sent: i64,
+    pub subject: String,
+    /// The sentence where you asked, as you wrote it.
+    pub asked: String,
+    pub due: i64,
+    /// Your words, when you set the date ("by Friday").
+    pub words: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct WaitAnswered {
+    /// The answer.
+    pub id: String,
+    pub name: String,
+    pub subject: String,
+    pub ts: i64,
+    /// Where the answer is: "people", "digest", …
+    pub bucket: Bucket,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct WaitingSet {
+    pub id: String,
+    /// "later" (until `until`), "stop", or "active".
+    pub state: String,
+    pub until: Option<i64>,
 }
