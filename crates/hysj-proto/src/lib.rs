@@ -726,7 +726,8 @@ pub struct SenderImages {
 
 // --- The Digest as an edition -----------------------------------------------------------
 
-/// Which delivery: 0 the latest, 1–2 the two before, 3 everything older.
+/// 0 the latest edition (unread mail up to a week old, adding up until it is
+/// marked as read), 1 everything older.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct EditionParams {

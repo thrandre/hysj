@@ -2,35 +2,6 @@
 // Ported from the egui app (digest.test.ts).
 
 import type { MessageSummary } from './types.ts';
-import { lastSlot, when } from './words.ts';
-
-/** The latest delivery and the three before it, newest first. */
-export function slots(now: Date): Date[] {
-  const s0 = lastSlot(now);
-  const s1 = lastSlot(new Date(s0.getTime() - 1000));
-  const s2 = lastSlot(new Date(s1.getTime() - 1000));
-  const s3 = lastSlot(new Date(s2.getTime() - 1000));
-  return [s0, s1, s2, s3];
-}
-
-/** Which messages a pick shows: (after, up to and including), unix seconds. 0 latest, 1–2 earlier, 3 older. */
-export function window(pick: number, now: Date): [number | null, number] {
-  const s = slots(now).map((d) => d.getTime() / 1000);
-  if (pick === 0) return [s[1], s[0]];
-  if (pick === 1) return [s[2], s[1]];
-  if (pick === 2) return [s[3], s[2]];
-  return [null, s[3]];
-}
-
-/** Earlier deliveries for the top bar: [pick, label]. */
-export function earlier(now: Date): [number, string][] {
-  const s = slots(now);
-  return [
-    [1, when(s[1], now)],
-    [2, when(s[2], now)],
-    [3, 'Older'],
-  ];
-}
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 export { plural };

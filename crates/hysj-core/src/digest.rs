@@ -116,30 +116,36 @@ pub fn when(t: &Zoned, now: &Zoned) -> String {
     format!("{} {words}", t.strftime("%H:%M"))
 }
 
-/// The latest delivery and the three before it, newest first.
-pub fn slots(now: &Zoned) -> [Zoned; 4] {
+/// How long unread Digest mail stays in the latest edition.
+pub const LATEST_DAYS: i64 = 7;
+
+/// Which mail a pick shows, as (after, up to and including): 0 the latest
+/// edition, everything unread until the last delivery — it adds up until it's
+/// marked as read — but no further back than [`LATEST_DAYS`]; 1 everything
+/// older.
+pub fn window(pick: u8, now: &Zoned) -> (Option<Zoned>, Zoned) {
+    let last = last_slot(now);
+    let cut = last
+        .checked_sub(jiff::SignedDuration::from_hours(24 * LATEST_DAYS))
+        .expect("valid time");
+    match pick {
+        0 => (Some(cut), last),
+        _ => (None, cut),
+    }
+}
+
+/// What the latest edition says it covers ("since Friday 16:00"): the
+/// delivery before its oldest mail, else the delivery before this one.
+pub fn since(oldest: Option<i64>, slot: &Zoned) -> Zoned {
     let before = |z: &Zoned| {
         last_slot(
             &z.checked_sub(jiff::SignedDuration::from_secs(1))
                 .expect("valid time"),
         )
     };
-    let s0 = last_slot(now);
-    let s1 = before(&s0);
-    let s2 = before(&s1);
-    let s3 = before(&s2);
-    [s0, s1, s2, s3]
-}
-
-/// A pick's delivery and the one before it: 0 the latest, 1–2 earlier, 3
-/// everything older (then the "previous" is the start of time).
-pub fn window(pick: u8, now: &Zoned) -> (Option<Zoned>, Zoned) {
-    let s = slots(now);
-    match pick {
-        0 => (Some(s[1].clone()), s[0].clone()),
-        1 => (Some(s[2].clone()), s[1].clone()),
-        2 => (Some(s[3].clone()), s[2].clone()),
-        _ => (None, s[3].clone()),
+    match oldest.and_then(|t| jiff::Timestamp::from_second(t).ok()) {
+        Some(t) => before(&t.to_zoned(slot.time_zone().clone())),
+        None => before(slot),
     }
 }
 
@@ -149,6 +155,19 @@ mod tests {
 
     fn at(s: &str) -> Zoned {
         format!("{s}[Europe/Oslo]").parse().unwrap()
+    }
+
+    #[test]
+    fn latest_adds_up_for_a_week() {
+        let now = at("2026-10-21T14:05:00+02:00");
+        let (after, upto) = window(0, &now);
+        assert_eq!(upto, at("2026-10-21T08:00:00+02:00"));
+        assert_eq!(after, Some(at("2026-10-14T08:00:00+02:00")));
+        assert_eq!(window(1, &now), (None, at("2026-10-14T08:00:00+02:00")));
+        // Unread since Monday morning: "since 16:00 on Sunday".
+        let oldest = at("2026-10-19T07:30:00+02:00").timestamp().as_second();
+        assert_eq!(since(Some(oldest), &upto), at("2026-10-18T16:00:00+02:00"));
+        assert_eq!(since(None, &upto), at("2026-10-20T16:00:00+02:00"));
     }
 
     #[test]

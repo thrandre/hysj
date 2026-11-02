@@ -1,13 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { earlier, summary, window } from './digest.ts';
+import { summary } from './digest.ts';
 import { nextSlot, setDigestHours, when } from './words.ts';
 
 test('deliveries and words', () => {
   const now = new Date(2026, 9, 20, 14, 5); // Tuesday
-  assert.deepEqual(window(0, now), [new Date(2026, 9, 19, 16).getTime() / 1000, new Date(2026, 9, 20, 8).getTime() / 1000]);
-  assert.equal(window(3, now)[0], null);
-  assert.deepEqual(earlier(now)[0], [1, '16:00 yesterday']);
   assert.equal(when(new Date(2026, 9, 20, 12), now), '12:00 today');
   assert.equal(when(new Date(2026, 9, 21, 12), now), '12:00 tomorrow');
   assert.equal(when(new Date(2026, 9, 19, 19), now), '19:00 yesterday');
@@ -16,7 +13,6 @@ test('deliveries and words', () => {
   // New hours apply at once: no 16:00 left over.
   setDigestHours([12]);
   assert.equal(when(nextSlot(now), now), '12:00 tomorrow');
-  assert.deepEqual(earlier(now)[0], [1, '12:00 yesterday']);
   setDigestHours([8, 16]);
   assert.equal(
     summary(3, 29, 4, 6),

@@ -671,9 +671,9 @@ impl Daemon {
     ) -> Result<hysj_proto::Edition, hysj_core::StoreError> {
         use hysj_core::digest;
         let now = now.clone();
-        let (previous, slot) = digest::window(pick, &now);
+        let (after, slot) = digest::window(pick, &now);
         let (after, upto) = (
-            previous.as_ref().map(|p| p.timestamp().as_second()),
+            after.as_ref().map(|p| p.timestamp().as_second()),
             slot.timestamp().as_second(),
         );
         let msgs: Vec<_> = self
@@ -685,6 +685,8 @@ impl Daemon {
                 None => pick == 0,
             })
             .collect();
+        let previous =
+            (pick == 0).then(|| digest::since(msgs.iter().filter_map(|m| m.ts).min(), &slot));
         let t = now.timestamp().as_second();
         let filed = self.store.orders()?.iter().filter(|o| o.status < 4).count()
             + self
