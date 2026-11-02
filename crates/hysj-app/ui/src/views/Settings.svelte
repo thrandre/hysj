@@ -97,7 +97,11 @@
               <span class="how">
                 {a.host === 'imap.gmail.com' ? 'Gmail · IMAP with app password · labels kept as tags' : `IMAP ${a.host} · SMTP ${a.smtp_host} · password in keychain`}
               </span>
+              {#if a.problem}<span class="problem" role="status">{a.problem}</span>{/if}
             </div>
+            {#if a.problem}
+              <button class="btn small primary" onclick={() => (editing = a)}>Sign in again</button>
+            {/if}
             {#if renaming !== a.name}
               <button class="btn small ghost" onclick={() => ((renaming = a.name), (newLabel = a.label ?? ''))}>Rename</button>
             {/if}
@@ -272,6 +276,10 @@
   }
   .addr {
     color: var(--secondary);
+  }
+  .problem {
+    font-size: 13px;
+    color: var(--danger);
   }
   .how,
   .fine {

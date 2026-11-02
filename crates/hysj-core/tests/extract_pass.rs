@@ -56,6 +56,7 @@ async fn extracts_after_sync() {
             smtp_host: "smtp.gmail.com".into(),
             smtp_port: 465,
             label: None,
+            problem: None,
         })
         .unwrap();
     let headers = |raw: &str| raw.split("\r\n\r\n").next().unwrap().as_bytes().to_vec();

@@ -575,6 +575,7 @@ impl Store {
                 smtp_host: r.get(5)?,
                 smtp_port: r.get(6)?,
                 label: r.get(7)?,
+                problem: None,
             })
         })?
         .collect()

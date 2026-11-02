@@ -59,7 +59,10 @@ pub fn daemon_main() -> ! {
     set_models_dir();
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                // html5ever (via ammonia) warns on every malformed email: 31 GB of log.
+                "info,html5ever=error".into()
+            }),
         )
         .with_writer(std::io::stderr)
         .init();
@@ -115,6 +118,26 @@ pub fn password(address: &str) -> Result<String, RpcError> {
     }
 }
 
+/// A failed sync as one sentence for Settings: a rejected login asks for a
+/// new sign-in; anything else shows the server's words.
+fn problem(error: &str) -> String {
+    let l = error.to_lowercase();
+    if [
+        "authenticationfailed",
+        "invalid credentials",
+        "authenticate failed",
+        "login failed",
+        "sign-in:",
+    ]
+    .iter()
+    .any(|w| l.contains(w))
+    {
+        "The server no longer accepts the saved sign-in. Sign in again to get new mail.".into()
+    } else {
+        format!("Couldn’t get new mail: {error}")
+    }
+}
+
 /// `$HYSJ_DB`, else `<data dir>/hysj/hysj.db` (created owner-only). A store
 /// from before the rename (`<data dir>/quiet/quiet.db`) is moved over once.
 pub fn default_db_path() -> std::io::Result<PathBuf> {
@@ -155,6 +178,8 @@ pub struct Daemon {
     passwords: HashMap<String, String>,
     /// Microsoft access tokens by address (memory only; renewed when stale).
     tokens: HashMap<String, oauth::Tokens>,
+    /// Why each account's last sync failed, by account name (shown in Settings).
+    problems: HashMap<String, String>,
 }
 
 impl Daemon {
@@ -165,6 +190,7 @@ impl Daemon {
             sessions: HashMap::new(),
             passwords: HashMap::new(),
             tokens: HashMap::new(),
+            problems: HashMap::new(),
         }
     }
 
@@ -294,6 +320,7 @@ impl Daemon {
             smtp_port: p.smtp_port.unwrap_or(known.smtp_port),
             // Kept as it is when an existing account's servers change.
             label: None,
+            problem: None,
             name: p.name,
             address: p.address,
         };
@@ -342,6 +369,7 @@ impl Daemon {
             smtp_host: known.smtp_host,
             smtp_port: known.smtp_port,
             label: None,
+            problem: None,
         };
         let backend = ImapBackend::connect(&account, Login::Bearer(&t.access))
             .await
@@ -814,27 +842,47 @@ impl Hub {
             }
         };
         let mut results = Vec::new();
+        // One account failing (a revoked password) doesn't stop the others.
+        let mut failed = None;
         for account in accounts {
             let name = account.name.clone();
-            let (mut backend, cursor) = {
-                let mut d = self.daemon.lock().await;
-                d.session(&account).await?;
-                let backend = d.sessions.remove(&name).expect("connected above");
-                (backend, d.store.cursor(&name).map_err(backend_err)?)
-            };
-            let changes = backend.sync_since(cursor.as_deref()).await.map_err(|e| {
-                tracing::warn!(account = %name, error = %e, "backend call failed");
-                backend_err(e)
-            })?;
-            let (new, pending) = {
+            let step = async {
+                let (mut backend, cursor) = {
+                    let mut d = self.daemon.lock().await;
+                    d.session(&account).await?;
+                    let backend = d.sessions.remove(&name).expect("connected above");
+                    (backend, d.store.cursor(&name).map_err(backend_err)?)
+                };
+                let changes = backend
+                    .sync_since(cursor.as_deref())
+                    .await
+                    .map_err(backend_err)?;
                 let mut d = self.daemon.lock().await;
                 let new = d.store.apply(&name, &changes).map_err(backend_err)?;
                 let pending = d
                     .store
                     .pending_extracts(&name, hysj_core::sync::EXTRACT_PER_SYNC)
                     .unwrap_or_default();
-                (new, pending)
+                Ok::<_, RpcError>((backend, new, pending))
             };
+            let (mut backend, new, pending) = match step.await {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!(account = %name, error = %e, "sync failed");
+                    let problem = problem(&e.message);
+                    let mut d = self.daemon.lock().await;
+                    if d.problems.get(&name) != Some(&problem) {
+                        d.problems.insert(name.clone(), problem);
+                        drop(d);
+                        self.changed();
+                    }
+                    failed.get_or_insert(e);
+                    continue;
+                }
+            };
+            if self.daemon.lock().await.problems.remove(&name).is_some() {
+                self.changed();
+            }
             tracing::info!(account = %name, new, "synced");
             // Codes, bookings, orders. Never fails the sync; counts only in logs.
             let ids: Vec<String> = pending.iter().map(|p| p.remote_id.clone()).collect();
@@ -866,6 +914,9 @@ impl Hub {
                 Err(e) => tracing::warn!(account = %name, error = %e, "extraction failed"),
             }
             results.push(SyncResult { account: name, new });
+        }
+        if let Some(e) = failed.filter(|_| results.is_empty()) {
+            return Err(e);
         }
         // Unsubscribed a week ago and still sending: blocked.
         let late = self.daemon.lock().await.store.enforce_unsubscribes();
@@ -1598,7 +1649,13 @@ async fn dispatch(req: Request, daemon: &mut Daemon, conn: &mut Conn) -> Result<
             to_value(())
         }
         method::ACCOUNT_ADD => to_value(daemon.add_account(params(req.params)?).await?),
-        method::ACCOUNT_LIST => to_value(daemon.store.accounts().map_err(backend_err)?),
+        method::ACCOUNT_LIST => {
+            let mut accounts = daemon.store.accounts().map_err(backend_err)?;
+            for a in &mut accounts {
+                a.problem = daemon.problems.get(&a.name).cloned();
+            }
+            to_value(accounts)
+        }
         method::ACCOUNT_DISCOVER => {
             let p: hysj_proto::AccountOAuth = params(req.params)?;
             to_value(provider::discover(&p.address))

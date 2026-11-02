@@ -16,6 +16,7 @@ fn start() -> ChannelTransport {
                 smtp_host: "smtp.example".into(),
                 smtp_port: 465,
                 label: None,
+                problem: None,
             })
             .unwrap();
         let headers = format!("From: Someone <s@{name}.example>\r\nSubject: Hi from {name}\r\n");

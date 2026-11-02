@@ -69,6 +69,7 @@ async fn sync_then_lazy_body() {
             smtp_host: "smtp.example.com".into(),
             smtp_port: 465,
             label: None,
+            problem: None,
         })
         .unwrap();
     let mut fake = Fake {

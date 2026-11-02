@@ -8,4 +8,8 @@ name: string, address: string, host: string, port: number, username: string, smt
 /**
  * What the reader calls it ("Work"); the UI shows `name` without one.
  */
-label: string | null, };
+label: string | null, 
+/**
+ * Why its last sync failed, as a sentence; from the daemon, never stored.
+ */
+problem: string | null, };

@@ -42,8 +42,8 @@ export async function fixture(): Promise<Snapshot> {
   ];
   return {
     accounts: [
-      { name: 'personal', address: 'me@gmail.example', host: 'imap.gmail.com', port: 993, username: 'me@gmail.example', smtp_host: 'smtp.gmail.com', smtp_port: 465, label: 'Personal' },
-      { name: 'work', address: 'me@work.example', host: 'imap.work.example', port: 993, username: 'me@work.example', smtp_host: 'smtp.work.example', smtp_port: 465, label: 'Work' },
+      { name: 'personal', address: 'me@gmail.example', host: 'imap.gmail.com', port: 993, username: 'me@gmail.example', smtp_host: 'smtp.gmail.com', smtp_port: 465, label: 'Personal', problem: null },
+      { name: 'work', address: 'me@work.example', host: 'imap.work.example', port: 993, username: 'me@work.example', smtp_host: 'smtp.work.example', smtp_port: 465, label: 'Work', problem: null },
     ],
     identities: [
       { account: 'personal', address: 'me@gmail.example', name: 'Kai' },

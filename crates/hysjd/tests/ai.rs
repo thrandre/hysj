@@ -75,6 +75,7 @@ async fn writes_gists_and_replies() {
             smtp_host: "smtp.gmail.com".into(),
             smtp_port: 465,
             label: None,
+            problem: None,
         })
         .unwrap();
     // You've written to Aisha and Echo before: their mail goes to People.

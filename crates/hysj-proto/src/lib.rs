@@ -370,6 +370,9 @@ pub struct Account {
     /// What the reader calls it ("Work"); the UI shows `name` without one.
     #[serde(default)]
     pub label: Option<String>,
+    /// Why its last sync failed, as a sentence; from the daemon, never stored.
+    #[serde(default)]
+    pub problem: Option<String>,
 }
 
 /// What the add-account form needs to know about an address.

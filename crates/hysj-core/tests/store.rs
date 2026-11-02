@@ -11,6 +11,7 @@ fn account(name: &str, address: &str) -> Account {
         smtp_host: "smtp.example.com".into(),
         smtp_port: 465,
         label: None,
+        problem: None,
     }
 }
 
