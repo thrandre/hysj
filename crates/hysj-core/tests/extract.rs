@@ -140,6 +140,28 @@ fn reset_links() {
     );
 }
 
+#[test]
+fn recovery_links() {
+    // Steam-style: "Recovery" in the subject, the link glued to the text and
+    // HTML-escaped in the plain part.
+    let text = "Click the link below to recover your login:https://help.service.example/wizard/VerifyCode?s=12&amp;c=AB1CD\r\nIf this wasn't you, ignore this email.";
+    let c = extract(&mail(AR_OK, SVC, "Account Recovery", text))
+        .into_iter()
+        .find_map(|e| match e {
+            Extract::Code(c) => Some(c),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(
+        (c.kind, c.link_ok, c.link.as_deref()),
+        (
+            CodeKind::Reset,
+            true,
+            Some("https://help.service.example/wizard/VerifyCode?s=12&c=AB1CD")
+        )
+    );
+}
+
 fn html_mail(subject: &str, json: &str) -> Vec<u8> {
     format!(
         "From: Shop <orders@shop.example>\r\nSubject: {subject}\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<html><head><script data-x='1' type='application/ld+json'>{json}</script></head><body>Hi</body></html>\r\n"

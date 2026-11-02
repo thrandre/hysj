@@ -45,6 +45,8 @@ const CODE_SUBJECT: &[&str] = &[
     "inloggning",
     "otp",
     "reset",
+    "recover*",
+    "gjenopprett*",
     "tilbakestill",
     "nullstill",
     "passord",
@@ -385,9 +387,16 @@ fn find_code(subject: &str, text: &str, html: &str, service: &str, domain: &str)
     };
     let body: String = body.chars().take(4000).collect();
     let lower = format!("{s}\n{}", body.to_lowercase());
-    let kind = if ["reset", "tilbakestill", "nullstill", "återställ"]
-        .iter()
-        .any(|w| s.contains(w))
+    let kind = if [
+        "reset",
+        "recover",
+        "gjenopprett",
+        "tilbakestill",
+        "nullstill",
+        "återställ",
+    ]
+    .iter()
+    .any(|w| s.contains(w))
         || (["passord", "password", "lösenord"]
             .iter()
             .any(|w| s.contains(w))
@@ -427,6 +436,7 @@ fn find_code(subject: &str, text: &str, html: &str, service: &str, domain: &str)
                 "passord",
                 "token",
                 "recover",
+                "verify",
                 "tilbakestill",
                 "nullstill",
             ]
@@ -611,8 +621,9 @@ fn links(html: &str, text: &str) -> Vec<String> {
         }
     }
     for w in text.split_whitespace() {
-        if w.starts_with("https://") || w.starts_with("http://") {
-            out.push(w.trim_end_matches(['>', ')', '.', ',']).to_string());
+        // Also glued to the text before it ("credentials:https://…").
+        if let Some(i) = w.find("https://").or_else(|| w.find("http://")) {
+            out.push(unescape(w[i..].trim_end_matches(['>', ')', '.', ','])));
         }
     }
     out
